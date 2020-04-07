@@ -1,0 +1,33 @@
+[project]
+name = 'hide'
+module = ['haxe']
+
+[haxelib.heaps]
+version = 'git'
+repository = 'https://github.com/HeapsIO/heaps'
+
+[haxelib.castle]
+version = 'git'
+repository = 'https://github.com/ncannasse/castle'
+
+[haxelib.hxbit]
+version = 'git'
+repository = 'https://github.com/ncannasse/hxbit'
+
+[haxelib.hscript]
+version = 'git'
+repository = 'https://github.com/HaxeFoundation/hscript'
+
+[haxelib.hxnodejs]
+version = 'git'
+repository = 'https://github.com/HaxeFoundation/hxnodejs.git'
+
+[haxe]
+lib = ['hxnodejs', 'heaps', 'hxbit', 'hscript', 'castle', 'hx3compat', 'domkit']
+source = ['libs', '.']
+defines = ['js-classic', 'js-unflatten', 'hscriptPos', 'multidriver', 'editor', 'no-deprecation-warnings']
+macros = ['include("hd3d.shader")', 'include("h2d.col")', 'include("hxd.poly2tri")', 'include("hxd.clipper")', 'include("hxd.earcut")']
+extras = ['-dce no', '-debug']
+target = 'js'
+main = 'hide.Ide'
+output = 'bin/hide.js'

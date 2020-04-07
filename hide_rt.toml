@@ -1,0 +1,19 @@
+[project]
+name = 'hide_rt'
+module = ['haxe']
+
+[haxelib.heaps]
+version = 'git'
+repository = 'https://github.com/HeapsIO/heaps'
+
+[haxelib.castle]
+version = 'git'
+repository = 'https://github.com/ncannasse/castle'
+
+[haxe]
+lib = ['heaps', 'castle']
+source = ['.']
+defines = ['no-compilation']
+macros = ['include("hrt")']
+extras = ['--remap hide:notAllowed']
+target = 'hl'
