@@ -1,4 +1,4 @@
-package hide;
+package hide.tools;
 
 import h3d.scene.Interactive;
 import h3d.scene.RenderContext;
@@ -12,10 +12,11 @@ class ChunkScene {
 	var tmpVec = new h3d.Vector();
 	var tmpBounds = new h3d.col.Bounds();
 	var defaultBounds = new h3d.col.Bounds();
+	var global : Chunk;
 
 	public function new( chunkSize ) {
 		this.chunkSize = chunkSize;
-		var global = new Chunk(new h3d.col.Point(0,0,0));
+		global = new Chunk(new h3d.col.Point(0,0,0));
 		global.isGlobal = true;
 		chunks.push(global);
 		defaultBounds.setMin(new h3d.col.Point(0,0,0));
@@ -24,7 +25,7 @@ class ChunkScene {
 
 	// Use a stack for an iterarive version
 	var stack : Array<h3d.scene.Object> = [];
-	inline public function getSceneKey( obj : h3d.scene.Object ) : Float {
+	public function getSceneKey( obj : h3d.scene.Object ) : Float {
 		var key = 0.0;
 		var curCount = 1;
 
@@ -37,12 +38,7 @@ class ChunkScene {
 			if( !obj.visible )
 				continue;
 
-			var gizmo = Std.downcast(obj, hide.view.l3d.Gizmo);
-			if( gizmo != null ) 
-				continue;
-
-			var terrainBrushPreview = Std.downcast(obj, hide.prefab.terrain.Brush.BrushPreview);
-			if( terrainBrushPreview != null ) 
+			if( isGlobal(obj) )
 				continue;
 
 			// Ignore animated objects
@@ -60,15 +56,15 @@ class ChunkScene {
 
 	inline public function refreshInFrustumFlag( ctx : RenderContext ) {
 		for( c in chunks ) {
-			if( c.isGlobal ) 
+			if( c.isGlobal )
 				c.inFrustum = true;
 			else
 				c.inFrustum = c.bounds.inFrustum(ctx.camera.frustum);
 		}
 	}
-	
+
 	public function chunkifyScene( scene : h3d.scene.Scene ) {
-		for( c in chunks ) 
+		for( c in chunks )
 			c.reset();
 		chunkifyInteractives(scene);
 		chunkifyObjects(scene, null);
@@ -76,11 +72,11 @@ class ChunkScene {
 
 	public function chunkifyInteractives( scene : h3d.scene.Scene ) {
 		for( i in @:privateAccess scene.interactives ) {
-			
-			// Gizmo 
+
+			// Gizmo
 			if(	i.priority >= 100 ) {
-				getGlobalChunk().addInteractive(i);
-			} 
+				global.addInteractive(i);
+			}
 			else {
 				var oc = Std.downcast(i.shape, h3d.col.ObjectCollider);
 				if( oc != null && oc.obj != null && oc.obj.visible ) {
@@ -89,67 +85,51 @@ class ChunkScene {
 					tmpBounds.setMin(pos);
 					tmpBounds.setMax(pos);
 					var chunks = getChunks(tmpBounds);
-					for( c in chunks ) 
+					for( c in chunks )
 						c.addInteractive(i);
 				}
 			}
 		}
 	}
-	
-	inline function chunkifyObjects( obj : h3d.scene.Object, chunkOverride : Array<Chunk> ) {
 
-		// Gizmo exception
-		if( Std.downcast(obj, hide.view.l3d.Gizmo) != null ) {
-			var gc = getGlobalChunk();
-			chunkOverride = [gc];
-			gc.addObject(obj, null);
-			for( c in @:privateAccess obj.children )
-				chunkifyObjects(c, chunkOverride);
-			return;
-		}
-		
-		// Terrain  exception
-		var terrainBrushPreview = Std.downcast(obj, hide.prefab.terrain.Brush.BrushPreview);
-		if( terrainBrushPreview != null ) {
-			var gc = getGlobalChunk();
-			gc.addObject(obj, null);
+	inline function isGlobal( obj : h3d.scene.Object ) {
+		return Std.is(obj,hide.view.l3d.Gizmo) || Std.is(obj, hide.prefab.terrain.Brush.BrushPreview) || Std.is(obj, hrt.prefab.l3d.MeshSpray.MeshSprayObject) || Std.is(obj, h3d.scene.Light) || Std.is(obj, hrt.prefab.l3d.SplineMesh.SplineMeshBatch);
+	}
+
+	function chunkifyObjects( obj : h3d.scene.Object, chunkOverride : Array<Chunk> ) {
+		var shared = { o : obj, emitFlag : false };
+
+		if( isGlobal(obj) ) {
+			global.addObject(obj, shared);
 			return;
 		}
 
-		if( !obj.visible ) 
+		if( !obj.visible )
 			return;
 
-		if( Std.downcast(obj, h3d.scene.Light) != null ) {
-			var gc = getGlobalChunk();
-			gc.addObject(obj, null);
-		}
-		else {
-			
-			if( chunkOverride == null || chunkOverride.length == 0 ) {
+		if( chunkOverride == null || chunkOverride.length == 0 ) {
 
-				tmpBounds.load(defaultBounds);
-				// Mesh Support
-				var mesh = Std.downcast(obj, h3d.scene.Mesh);
-				if( mesh != null ) {
-					if( mesh.primitive != null ) {
-						var b = mesh.primitive.getBounds();
-						if( b != null && !b.isEmpty() ) 
-							tmpBounds.load(b);
-					}
-				}
-				tmpBounds.transform(obj.getAbsPos());
-
-				var chunks : Array<Chunk> = getChunks(tmpBounds);
-				for( c in chunks ) 
-					c.addObject(obj, null);
-				if( obj.currentAnimation != null ) {
-					chunkOverride = chunks;
+			tmpBounds.load(defaultBounds);
+			// Mesh Support
+			var mesh = Std.downcast(obj, h3d.scene.Mesh);
+			if( mesh != null ) {
+				if( mesh.primitive != null ) {
+					var b = mesh.primitive.getBounds();
+					if( b != null && !b.isEmpty() )
+						tmpBounds.load(b);
 				}
 			}
-			else {
-				for( c in chunkOverride ) {
-					c.addObject(obj, null);
-				}
+			tmpBounds.transform(obj.getAbsPos());
+
+			var chunks : Array<Chunk> = getChunks(tmpBounds);
+			for( c in chunks )
+				c.addObject(obj, shared);
+			if( obj.currentAnimation != null )
+				chunkOverride = chunks;
+		}
+		else {
+			for( c in chunkOverride ) {
+				c.addObject(obj, shared);
 			}
 		}
 
@@ -157,21 +137,10 @@ class ChunkScene {
 			chunkifyObjects(c, chunkOverride);
 	}
 
-	inline function getGlobalChunk() : Chunk {
-		var result = null;
-		for( c in chunks ) {
-			if( c.isGlobal ) {
-				result = c;
-				break;
-			}
-		}
-		return result;
-	}
-
-	inline function getChunk( x : Int, y : Int ) {
+	function getChunk( x : Int, y : Int ) {
 		var r = null;
 		for( c in chunks ) {
-			if( c.pos.x == x * chunkSize && c.pos.y == y * chunkSize) {
+			if( c.pos.x == x * chunkSize && c.pos.y == y * chunkSize && !c.isGlobal ) {
 				r = c;
 				break;
 			}
@@ -179,7 +148,7 @@ class ChunkScene {
 		return r;
 	}
 
-	inline function getChunks( bounds : h3d.col.Bounds ) : Array<Chunk> {
+	function getChunks( bounds : h3d.col.Bounds ) : Array<Chunk> {
 		var result = [];
 		for( x in hxd.Math.floor(bounds.xMin / chunkSize) ... hxd.Math.floor(bounds.xMax / chunkSize) + 1) {
 			for( y in hxd.Math.floor(bounds.yMin / chunkSize) ... hxd.Math.floor(bounds.yMax / chunkSize) + 1) {
@@ -204,20 +173,17 @@ class Chunk {
 	public var pos : h3d.col.Point;
 
 	public var objects : Array<{o : h3d.scene.Object, emitFlag : Bool}> = [];
-	public var objectCount = 0;
-
 	public var interactives : Array<h3d.scene.Interactive> = [];
-	public var interactiveCount = 0;
 
 	public function new( pos : h3d.col.Point ) {
 		this.pos = pos;
 	}
 
-	public inline function reset() {
-		objectCount = 0;
-		interactiveCount = 0;
+	public function reset() {
 		bounds.zMin = 0;
 		bounds.zMax = 0;
+		objects = [];
+		interactives = [];
 	}
 
 	public inline function updateBounds( chunkSize : Float ) {
@@ -229,30 +195,20 @@ class Chunk {
 		bounds.zMax = 0;
 	}
 
-	public inline function addObject( obj : h3d.scene.Object, b : h3d.col.Bounds) {
-		objectCount++;
-		if( objectCount > objects.length )
-			objects.resize(objectCount);
-		objects[objectCount - 1] = { o : obj, emitFlag : false };
-		if( b != null ) {
-			bounds.zMin = hxd.Math.min(bounds.zMin, b.zMin);
-			bounds.zMax = hxd.Math.max(bounds.zMax, b.zMax);
-		}
+	public inline function addObject( obj : h3d.scene.Object, shared ) {
+		objects.push(shared);
 	}
 
 	public inline function addInteractive( i : Interactive ) {
-		interactiveCount++;
-		if( interactiveCount > interactives.length )
-			interactives.resize(interactiveCount);
-		interactives[interactiveCount - 1] = i;
+		interactives.push(i);
 	}
-} 
+}
 
-class Scene extends h3d.scene.Scene {
+class ChunkedScene extends h3d.scene.Scene {
 
 	var cs = new ChunkScene(15.0);
 	var lastChunkifyTime = 0.0;
-	
+
 	public function new() {
 		super();
 	}
@@ -264,9 +220,8 @@ class Scene extends h3d.scene.Scene {
 			c.interactives = [];
 		}
 	}
-	
-	override function emitRec( ctx : h3d.scene.RenderContext ) {
 
+	override function emitRec( ctx : h3d.scene.RenderContext ) {
 		var needChunkify = (ctx.time - lastChunkifyTime) > 1.0;
 		if( !needChunkify ) {
 			var newKey = cs.getSceneKey(this);
@@ -277,16 +232,26 @@ class Scene extends h3d.scene.Scene {
 			cs.chunkifyScene(this);
 			lastChunkifyTime = ctx.time;
 		}
-			
+
 		cs.refreshInFrustumFlag(ctx);
-		
+
 		for( c in cs.chunks ) {
 
 			if( !c.isGlobal && !c.inFrustum )
 				continue;
 
-			for( i in 0 ... c.objectCount ) {
-				var o = c.objects[i].o;
+			for( obj in c.objects ) {
+
+				if( obj.emitFlag )
+					continue;
+				obj.emitFlag = true;
+
+				var o = obj.o;
+				if( c.isGlobal ) {
+					if( o == this ) continue;
+					o.emitRec(ctx);
+					continue;
+				}
 
 				// Some object can be in the objectlist without being visible ( Gizmo )
 				var visible = o.visible;
@@ -298,10 +263,7 @@ class Scene extends h3d.scene.Scene {
 				if( !visible )
 					continue;
 
-				if( c.objects[i].emitFlag )
-					continue;
-				else
-					c.objects[i].emitFlag = true;
+
 
 				if( o.posChanged ) {
 					if( currentAnimation != null ) currentAnimation.sync();
@@ -315,11 +277,9 @@ class Scene extends h3d.scene.Scene {
 			}
 		}
 
-		for( c in cs.chunks ) {
-			for( i in 0 ... c.objectCount ) {
-				c.objects[i].emitFlag = false;
-			}
-		}
+		for( c in cs.chunks )
+			for( obj in c.objects )
+				obj.emitFlag = false;
 	}
 
 	override function handleEvent( event : hxd.Event, last : hxd.SceneEvents.Interactive ) {
@@ -329,7 +289,7 @@ class Scene extends h3d.scene.Scene {
 		for( c in cs.chunks ) {
 			if( !c.isGlobal && !c.inFrustum )
 				continue;
-			interactiveCount += c.interactiveCount;
+			interactiveCount += c.interactives.length;
 		}
 		visibleInteractives.resize(interactiveCount);
 
@@ -337,7 +297,7 @@ class Scene extends h3d.scene.Scene {
 		for( c in cs.chunks ) {
 			if( !c.isGlobal && !c.inFrustum )
 				continue;
-			for( j in 0 ... c.interactiveCount ) {
+			for( j in 0...c.interactives.length ) {
 				visibleInteractives[i] = c.interactives[j];
 				i++;
 			}

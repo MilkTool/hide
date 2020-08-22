@@ -238,6 +238,10 @@ input[type=checkbox] {
 
 }
 
+.prefabview .scenetree {
+	max-height : 350px;
+}
+
 .hide-scenetree {
 	flex: 1;
 	background-color : #111;
@@ -431,6 +435,35 @@ input[type=checkbox] {
 	position: relative;
 	height: 100%;
 
+	&.masked {
+		& > * {
+			display : none !important;
+		}
+		flex : none;
+		position: absolute;
+		height : 20px;
+		width : 20px;
+		right : 0px;
+		>.maskToggle:before {
+			content : "«";
+		}
+	}
+
+	>.maskToggle {
+		&:before {
+			content : "»";
+		}
+		display : block !important;
+		position : absolute;
+		margin-top : -2px;
+		right : 5px;
+		color : #aaa;
+		font-size: 24px;
+		&:hover {
+			color : white;
+		}
+	}
+
 	.tabs-header {
 		background-color : #111;
 		padding : 2px;
@@ -495,6 +528,7 @@ input[type=checkbox] {
 	display : none;
 	width : 200px;
 	position : fixed;
+	z-index: 99;
 	top : 20px;
 	right : 0px;
 	background-color : black;
@@ -611,17 +645,16 @@ input[type=checkbox] {
 		position:relative;
 		width:200px;
 		margin-left:10px;
+	}
 
-		.texture-preview {
-			pointer-events: none;
-			display:inline-block;
-			width : 15px;
-			height: 15px;
-			position : absolute;
-			margin-left : -17px;
-			margin-top : 2px;
-		}
-
+	.texture-preview {
+		pointer-events: none;
+		display:inline-block;
+		width : 15px;
+		height: 15px;
+		position : absolute;
+		margin-left : -17px;
+		margin-top : 2px;
 	}
 
 	dl dl {
@@ -1084,6 +1117,15 @@ input[type=checkbox] {
 		width: 20px;
 		margin-left: 8px;
 	}
+}
+
+// Default Edit Button
+.editModeButton{
+	margin: 10px;
+	outline: 4px solid #fd5151;
+}
+.editModeEnabled {
+	outline: 4px solid #5897fb;
 }
 
 // Spline editor

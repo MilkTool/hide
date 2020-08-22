@@ -15,6 +15,7 @@ class AdvancedDecal extends Object3D {
 	var blendMode : h2d.BlendMode = Alpha;
 	var renderMode : h3d.mat.PbrMaterial.PbrMode = Decal;
 	var centered : Bool = true;
+	var autoAlpha : Bool = true;
 
 	override function save() {
 		var obj : Dynamic = super.save();
@@ -31,6 +32,7 @@ class AdvancedDecal extends Object3D {
 		if(fadeEnd != 1) obj.fadeEnd = fadeEnd;
 		if(renderMode != Decal) obj.renderMode = renderMode;
 		if(emissive != 0.0) obj.emissive = emissive;
+		if(autoAlpha != true) obj.autoAlpha = autoAlpha;
 		return obj;
 	}
 
@@ -49,6 +51,7 @@ class AdvancedDecal extends Object3D {
 		fadeEnd = obj.fadeEnd != null ? obj.fadeEnd : 1;
 		renderMode = obj.renderMode != null ? obj.renderMode : Decal;
 		emissive = obj.emissive != null ? obj.emissive : 0.0;
+		if( obj.autoAlpha != null ) autoAlpha = obj.autoAlpha;
 	}
 
 	override function makeInstance(ctx:Context) : Context {
@@ -92,7 +95,7 @@ class AdvancedDecal extends Object3D {
 
 	public function updateRenderParams(ctx) {
 		var mesh = Std.downcast(ctx.local3d, h3d.scene.Mesh);
-		mesh.material.blendMode = blendMode;
+		mesh.material.mainPass.setBlendMode(blendMode);
 		switch (renderMode) {
 			case Decal:
 				var shader = mesh.material.mainPass.getShader(h3d.shader.pbr.VolumeDecal.DecalPBR);
@@ -121,6 +124,7 @@ class AdvancedDecal extends Object3D {
 					if(shader.colorTexture != null) shader.colorTexture.wrap = Repeat;
 					shader.CENTERED = centered;
 					shader.GAMMA_CORRECT = renderMode == BeforeTonemapping;
+					shader.AUTO_ALPHA = autoAlpha;
 					shader.fadePower = fadePower;
 					shader.fadeStart = fadeStart;
 					shader.fadeEnd = fadeEnd;
@@ -169,7 +173,10 @@ class AdvancedDecal extends Object3D {
 			o.remove();
 	}
 
-	var pbrParams = '<dt>Albedo</dt><dd><input type="texturepath" field="albedoMap"/>
+	override function edit( ctx : EditContext ) {
+		super.edit(ctx);
+
+		var pbrParams = '<dt>Albedo</dt><dd><input type="texturepath" field="albedoMap"/>
 					<br/><input type="range" min="0" max="1" field="albedoStrength"/></dd>
 
 					<dt>Normal</dt><dd><input type="texturepath" field="normalMap"/>
@@ -178,11 +185,9 @@ class AdvancedDecal extends Object3D {
 					<dt>PBR</dt><dd><input type="texturepath" field="pbrMap"/>
 					<br/><input type="range" min="0" max="1" field="pbrStrength"/></dd>';
 
-	var overlayParams = '<dt>Color</dt><dd><input type="texturepath" field="albedoMap"/>
-						<dt>Emissive</dt><dd> <input type="range" min="0" max="10" field="emissive"/></dd>';
-
-	override function edit( ctx : EditContext ) {
-		super.edit(ctx);
+		var overlayParams = '<dt>Color</dt><dd><input type="texturepath" field="albedoMap"/></dd>
+						<dt>Emissive</dt><dd> <input type="range" min="0" max="10" field="emissive"/></dd>
+						<dt>AutoAlpha</dt><dd><input type="checkbox" field="autoAlpha"/></dd>';
 
 		var params = switch (renderMode) {
 			case Decal: pbrParams;
@@ -209,6 +214,7 @@ class AdvancedDecal extends Object3D {
 						<dd><select field="blendMode">
 							<option value="Alpha">Alpha</option>
 							<option value="Add">Add</option>
+							<option value="Multiply">Multiply</option>
 						</select></dd>
 					</dl>
 				</div>

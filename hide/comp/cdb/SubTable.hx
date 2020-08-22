@@ -23,7 +23,9 @@ class SubTable extends Table {
 
 		insertedTR = new Element("<tr>").addClass(cell.column.type == TProperties ? "props" : "list");
 		var group;
-		if( mode == Properties ) {
+		if( editor.displayMode == AllProperties && cell.table.parent == null ) {
+			group = new Element("<td>").attr("colspan","2").appendTo(insertedTR);
+		} else if( mode == Properties ) {
 			var count = cell.columnIndex + 1;
 			if (count < 3 && cell.table.columns.length >= 8)
 				count += 2; // fix when a lot of columns but the subproperty is on the left
@@ -39,6 +41,7 @@ class SubTable extends Table {
 		slider.hide();
 		var root = new Element("<table>");
 		root.appendTo(slider);
+		root.addClass("cdb-sub-sheet");
 
 		insertedTR.insertAfter(cell.line.element);
 		cell.element.text("...");
@@ -47,7 +50,11 @@ class SubTable extends Table {
 		super(editor, sheet, root, mode);
 	}
 
-	public function makeSubSheet() {
+	override function getRealSheet() {
+		return cell.table.sheet.getSub(cell.column);
+	}
+
+	function makeSubSheet() {
 		var sheet = cell.table.sheet;
 		var c = cell.column;
 		var index = cell.line.index;
@@ -113,7 +120,7 @@ class SubTable extends Table {
 			if( isEmpty ) {
 				// not a change to really undo, perform direct change
 				Reflect.deleteField(cell.line.obj, cell.column.name);
-				editor.api.save();
+				editor.save();
 			}
 		}
 		cell.refresh();

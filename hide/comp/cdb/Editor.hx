@@ -38,7 +38,7 @@ class Editor extends Component {
 	var api : EditorApi;
 	var undoState : Array<UndoState> = [];
 	var currentValue : Any;
-	public var view : ConfigView;
+	public var view : cdb.DiffFile.ConfigView;
 	public var config : hide.Config;
 	public var cursor : Cursor;
 	public var keys : hide.ui.Keys;
@@ -49,7 +49,6 @@ class Editor extends Component {
 		this.api = api;
 		this.config = config;
 		view = cast this.config.get("cdb.view");
-		currentValue = api.copy();
 		undo = new hide.ui.UndoHistory();
 	}
 
@@ -66,7 +65,6 @@ class Editor extends Component {
 		element.attr("tabindex", 0);
 		element.addClass("is-cdb-editor");
 		element.data("cdb", this);
-		element.on("focus", function(_) onFocus());
 		element.on("blur", function(_) cursor.hide());
 		element.on("keypress", function(e) {
 			if( e.target.nodeName == "INPUT" )
@@ -110,6 +108,8 @@ class Editor extends Component {
 		base = sheet.base;
 		cursor = new Cursor(this);
 		if( displayMode == null ) displayMode = Table;
+		DataFiles.load();
+		if( currentValue == null ) currentValue = api.copy();
 		refresh();
 	}
 
@@ -139,17 +139,26 @@ class Editor extends Component {
 		case K.SPACE:
 			e.preventDefault(); // prevent scroll
 		case K.ESCAPE:
-			if( currentFilter != null ) searchFilter(null);
+			if( currentFilter != null ) {
+				searchFilter(null);
+				searchBox.hide();
+			}
 		}
 		return false;
+	}
+
+	public function updateFilter() {
+		searchFilter(currentFilter);
 	}
 
 	function searchFilter( filter : String ) {
 		if( filter == "" ) filter = null;
 		if( filter != null ) filter = filter.toLowerCase();
 
-		var lines = element.find("table.cdb-sheet > tbody > tr").not(".head");
-		lines.removeClass("filtered");
+		var all = element.find("table.cdb-sheet > tbody > tr").not(".head");
+		var seps = all.filter(".separator");
+		var lines = all.not(".separator");
+		all.removeClass("filtered");
 		if( filter != null ) {
 			for( t in lines ) {
 				if( t.textContent.toLowerCase().indexOf(filter) < 0 )
@@ -159,8 +168,16 @@ class Editor extends Component {
 				lines = lines.filter(".list").not(".filtered").prev();
 				lines.removeClass("filtered");
 			}
+			all = all.not(".filtered").not(".hidden");
+			for( s in seps.elements() ) {
+				var idx = all.index(s);
+				if( idx == all.length - 1 || new Element(all.get(idx+1)).hasClass("separator") ) {
+					s.addClass("filtered");
+				}
+			}
 		}
 		currentFilter = filter;
+		cursor.update();
 	}
 
 	function onCopy() {
@@ -191,6 +208,7 @@ class Editor extends Component {
 		var text = ide.getClipboard();
 		var columns = cursor.table.columns;
 		var sheet = cursor.table.sheet;
+		var realSheet = cursor.table.getRealSheet();
 		if( clipboard == null || text != clipboard.text ) {
 			if( cursor.x < 0 || cursor.y < 0 ) return;
 			var x1 = cursor.x;
@@ -212,27 +230,32 @@ class Editor extends Component {
 				var col = columns[x];
 				if( !cursor.table.canEditColumn(col.name) )
 					continue;
-				var value : Dynamic = null;
-				switch( col.type ) {
-				case TId:
-					if( ~/^[A-Za-z0-9_]+$/.match(text) ) value = text;
-				case TString:
-					value = text;
-				case TInt:
-					value = Std.parseInt(text);
-				case TFloat:
-					value = Std.parseFloat(text);
-					if( Math.isNaN(value) ) value = null;
-				default:
-				}
-				if( value == null ) continue;
+				var lines = y1 == y2 ? [text] : text.split("\n");
 				for( y in y1...y2+1 ) {
+					var value : Dynamic = null;
+					var text = lines[y - y1];
+					if( text == null ) text = lines[lines.length - 1];
+					switch( col.type ) {
+					case TId:
+						if( ~/^[A-Za-z0-9_]+$/.match(text) ) value = text;
+					case TString:
+						value = text;
+					case TInt:
+						text = text.split(",").join("").split(" ").join("");
+						value = Std.parseInt(text);
+					case TFloat:
+						text = text.split(",").join("").split(" ").join("");
+						value = Std.parseFloat(text);
+						if( Math.isNaN(value) ) value = null;
+					default:
+					}
+					if( value == null ) continue;
 					var obj = sheet.lines[y];
 					Reflect.setField(obj, col.name, value);
 				}
 			}
 			endChanges();
-			sheet.sync();
+			realSheet.sync();
 			refreshAll();
 			return;
 		}
@@ -273,7 +296,7 @@ class Editor extends Component {
 			posY++;
 		}
 		endChanges();
-		sheet.sync();
+		realSheet.sync();
 		refreshAll();
 	}
 
@@ -326,7 +349,7 @@ class Editor extends Component {
 			Reflect.deleteField(line.obj, column.name);
 		else
 			Reflect.setField(line.obj, column.name, value);
-		line.table.sheet.updateValue(column, line.index, prev);
+		line.table.getRealSheet().updateValue(column, line.index, prev);
 		endChanges();
 	}
 
@@ -365,14 +388,14 @@ class Editor extends Component {
 		};
 	}
 
-	function setState( state : UndoState ) {
+	function setState( state : UndoState, doFocus : Bool ) {
 		var cur = state.cursor;
 		for( t in state.tables ) {
 			function openRec(s:UndoSheet) : Table {
 				if( s.parent != null ) {
 					var t = openRec(s.parent.sheet);
 					if( t != null ) {
-						var cell = t.lines[s.parent.line].cells[t.displayMode == Properties ? 0 : s.parent.column];
+						var cell = t.lines[s.parent.line].cells[t.displayMode == Properties || t.displayMode == AllProperties ? 0 : s.parent.column];
 						if( cell.line.subTable == null )
 							cell.open(true);
 						return cell.line.subTable;
@@ -394,7 +417,7 @@ class Editor extends Component {
 					table = t;
 					break;
 				}
-			if( table != null )
+			if( table != null && doFocus )
 				focus();
 			cursor.set(table, cur.x, cur.y, cur.select == null ? null : { x : cur.select.x, y : cur.select.y } );
 		} else
@@ -414,7 +437,7 @@ class Editor extends Component {
 		var state = undoState[0];
 		var newSheet = getCurrentSheet();
 		currentValue = newValue;
-		api.save();
+		save();
 		undo.change(Custom(function(undo) {
 			var currentSheet;
 			if( undo ) {
@@ -427,17 +450,23 @@ class Editor extends Component {
 				currentSheet = newSheet;
 			}
 			api.load(currentValue);
+			DataFiles.save(true); // save reloaded data
 			element.removeClass("is-cdb-editor");
 			refreshAll();
 			element.addClass("is-cdb-editor");
 			syncSheet(currentSheet);
 			refresh(state);
-			api.save();
+			save();
 		}));
+	}
+
+	function save() {
+		api.save();
 	}
 
 	public static function refreshAll( eraseUndo = false ) {
 		var editors : Array<Editor> = [for( e in new Element(".is-cdb-editor").elements() ) e.data("cdb")];
+		DataFiles.load();
 		for( e in editors ) {
 			e.syncSheet(Ide.inst.database);
 			e.refresh();
@@ -471,7 +500,7 @@ class Editor extends Component {
 	}
 
 	function openReference( s : cdb.Sheet, line : Int, column : Int ) {
-		ide.open("hide.view.CdbTable", { path : s.name }, function(view) @:privateAccess Std.downcast(view,hide.view.CdbTable).editor.cursor.setDefault(line,column));
+		ide.open("hide.view.CdbTable", {}, function(view) Std.downcast(view,hide.view.CdbTable).goto(s,line,column));
 	}
 
 	public function syncSheet( ?base, ?name ) {
@@ -487,10 +516,17 @@ class Editor extends Component {
 			}
 	}
 
+	function isUniqueID( sheet : cdb.Sheet, obj : {}, id : String ) {
+		var uniq = base.getSheet(sheet.name).index.get(id);
+		return uniq == null || uniq.obj == obj;
+	}
+
 	public function refresh( ?state : UndoState ) {
 
 		if( state == null )
 			state = getState();
+
+		var hasFocus = element.find(":focus").length > 0;
 
 		base.sync();
 
@@ -520,7 +556,7 @@ class Editor extends Component {
 		content.appendTo(element);
 
 		if( state != null )
-			setState(state);
+			setState(state, hasFocus);
 
 		if( cursor.table != null ) {
 			for( t in tables )
@@ -551,14 +587,18 @@ class Editor extends Component {
 		return null;
 	}
 
-	public function newColumn( sheet : cdb.Sheet, ?index : Int, ?onDone : cdb.Data.Column -> Void ) {
-		var modal = new hide.comp.cdb.ModalColumnForm(base, null, element);
+	public function newColumn( sheet : cdb.Sheet, ?index : Int, ?onDone : cdb.Data.Column -> Void, ?col ) {
+		var modal = new hide.comp.cdb.ModalColumnForm(base, sheet, col, element);
 		modal.setCallback(function() {
-			var c = modal.getColumn(base, sheet, null);
+			var c = modal.getColumn(base, sheet, col);
 			if (c == null)
 				return;
 			beginChanges();
-			var err = sheet.addColumn(c, index == null ? null : index + 1);
+			var err;
+			if( col != null )
+				err = base.updateColumn(sheet, col, c);
+			else
+				err = sheet.addColumn(c, index == null ? null : index + 1);
 			endChanges();
 			if (err != null) {
 				modal.error(err);
@@ -568,7 +608,7 @@ class Editor extends Component {
 			if( onDone != null )
 				onDone(c);
 			// if first column or subtable, refresh all
-			if( sheet.columns.length == 1 || sheet.parent != null )
+			if( sheet.columns.length == 1 || sheet.name.indexOf("@") > 0 )
 				refresh();
 			for( t in tables )
 				if( t.sheet == sheet )
@@ -578,23 +618,7 @@ class Editor extends Component {
 	}
 
 	public function editColumn( sheet : cdb.Sheet, col : cdb.Data.Column ) {
-		var modal = new hide.comp.cdb.ModalColumnForm(base, col, element);
-		modal.setCallback(function() {
-			var c = modal.getColumn(base, sheet, col);
-			if (c == null)
-				return;
-			beginChanges();
-			var err = base.updateColumn(sheet, col, c);
-			endChanges();
-			if (err != null) {
-				modal.error(err);
-				return;
-			}
-			for( t in tables )
-				if( t.sheet == sheet )
-					t.refresh();
-			modal.closeModal();
-		});
+		newColumn(sheet,col);
 	}
 
 	public function insertLine( table : Table, index = 0 ) {
@@ -636,22 +660,23 @@ class Editor extends Component {
 	public function popupColumn( table : Table, col : cdb.Data.Column, ?cell : Cell ) {
 		if( view != null )
 			return;
-		var indexColumn = table.sheet.columns.indexOf(col);
+		var sheet = table.getRealSheet();
+		var indexColumn = sheet.columns.indexOf(col);
 		var menu : Array<hide.comp.ContextMenu.ContextMenuItem> = [
-			{ label : "Edit", click : function () editColumn(table.sheet, col) },
-			{ label : "Add Column", click : function () newColumn(table.sheet, indexColumn) },
+			{ label : "Edit", click : function () editColumn(sheet, col) },
+			{ label : "Add Column", click : function () newColumn(sheet, indexColumn) },
 			{ label : "", isSeparator: true },
 			{ label : "Move Left", enabled:  (indexColumn > 0), click : function () {
 				beginChanges();
-				table.sheet.columns.remove(col);
-				table.sheet.columns.insert(indexColumn - 1, col);
+				sheet.columns.remove(col);
+				sheet.columns.insert(indexColumn - 1, col);
 				endChanges();
 				refresh();
 			}},
-			{ label : "Move Right", enabled: (indexColumn < table.sheet.columns.length - 1), click : function () {
+			{ label : "Move Right", enabled: (indexColumn < sheet.columns.length - 1), click : function () {
 				beginChanges();
-				table.sheet.columns.remove(col);
-				table.sheet.columns.insert(indexColumn + 1, col);
+				sheet.columns.remove(col);
+				sheet.columns.insert(indexColumn + 1, col);
 				endChanges();
 				refresh();
 			}},
@@ -659,13 +684,35 @@ class Editor extends Component {
 			{ label : "Delete", click : function () {
 				beginChanges();
 				if( table.displayMode == Properties )
-					changeObject(cell.line, col, base.getDefault(col,table.sheet));
+					changeObject(cell.line, col, base.getDefault(col,sheet));
 				else
-					table.sheet.deleteColumn(col.name);
+					sheet.deleteColumn(col.name);
 				endChanges();
 				refresh();
 			}}
 		];
+
+		if( table.parent == null ) {
+			var props = table.sheet.props;
+			switch( col.type ) {
+			case TString, TRef(_):
+				menu.push({ label : "Display Name", click : function() {
+					beginChanges();
+					props.displayColumn = (props.displayColumn == col.name ? null : col.name);
+					endChanges();
+					refresh();
+				}, checked: props.displayColumn == col.name });
+			case TTilePos:
+				menu.push({ label : "Display Icon", click : function() {
+					beginChanges();
+					props.displayIcon = (props.displayIcon == col.name ? null : col.name);
+					endChanges();
+					refresh();
+				}, checked: props.displayIcon == col.name });
+			default:
+			}
+		}
+
 		if( col.type == TString && col.kind == Script )
 			menu.insert(1,{ label : "Edit all", click : function() editScripts(table,col) });
 		if( table.displayMode == Properties ) {
@@ -772,7 +819,7 @@ class Editor extends Component {
 		if( sheet == null ) sheet = this.currentSheet;
 		if( onChange == null ) onChange = function() {}
 		var index = base.sheets.indexOf(sheet);
-		new hide.comp.ContextMenu([
+		var content : Array<ContextMenu.ContextMenuItem> = [
 			{ label : "Add Sheet", click : function() { beginChanges(); var db = ide.createDBSheet(index+1); endChanges(); if( db != null ) onChange(); } },
 			{ label : "Move Left", click : function() { beginChanges(); base.moveSheet(sheet,-1); endChanges(); onChange(); } },
 			{ label : "Move Right", click : function() { beginChanges(); base.moveSheet(sheet,1); endChanges(); onChange(); } },
@@ -789,39 +836,62 @@ class Editor extends Component {
 				onChange();
 			}},
 			{ label : "", isSeparator: true },
-			{ label : "Add Index", checked : sheet.props.hasIndex, click : function() {
-				beginChanges();
-				if( sheet.props.hasIndex ) {
-					for( o in sheet.getLines() )
-						Reflect.deleteField(o, "index");
-					sheet.props.hasIndex = false;
-				} else {
-					for( c in sheet.columns )
-						if( c.name == "index" ) {
-							ide.error("Column 'index' already exists");
-							return;
-						}
-					sheet.props.hasIndex = true;
+		];
+		if( sheet.props.dataFiles == null )
+			content = content.concat([
+				{ label : "Add Index", checked : sheet.props.hasIndex, click : function() {
+					beginChanges();
+					if( sheet.props.hasIndex ) {
+						for( o in sheet.getLines() )
+							Reflect.deleteField(o, "index");
+						sheet.props.hasIndex = false;
+					} else {
+						for( c in sheet.columns )
+							if( c.name == "index" ) {
+								ide.error("Column 'index' already exists");
+								return;
+							}
+						sheet.props.hasIndex = true;
+					}
+					endChanges();
+				}},
+				{ label : "Add Group", checked : sheet.props.hasGroup, click : function() {
+					beginChanges();
+					if( sheet.props.hasGroup ) {
+						for( o in sheet.getLines() )
+							Reflect.deleteField(o, "group");
+						sheet.props.hasGroup = false;
+					} else {
+						for( c in sheet.columns )
+							if( c.name == "group" ) {
+								ide.error("Column 'group' already exists");
+								return;
+							}
+						sheet.props.hasGroup = true;
+					}
+					endChanges();
+				}},
+			]);
+		if( sheet.lines.length == 0 || sheet.props.dataFiles != null )
+			content.push({
+				label : "Data Files",
+				checked : sheet.props.dataFiles != null,
+				click : function() {
+					beginChanges();
+					var txt = StringTools.trim(ide.ask("Data Files Path", sheet.props.dataFiles));
+					if( txt == "" ) {
+						Reflect.deleteField(sheet.props,"dataFile");
+						@:privateAccess sheet.sheet.lines = [];
+					} else {
+						sheet.props.dataFiles = txt;
+						@:privateAccess sheet.sheet.lines = null;
+						DataFiles.load();
+					}
+					endChanges();
+					refresh();
 				}
-				endChanges();
-			}},
-			{ label : "Add Group", checked : sheet.props.hasGroup, click : function() {
-				beginChanges();
-				if( sheet.props.hasGroup ) {
-					for( o in sheet.getLines() )
-						Reflect.deleteField(o, "group");
-					sheet.props.hasGroup = false;
-				} else {
-					for( c in sheet.columns )
-						if( c.name == "group" ) {
-							ide.error("Column 'group' already exists");
-							return;
-						}
-					sheet.props.hasGroup = true;
-				}
-				endChanges();
-			}},
-		]);
+			});
+		new ContextMenu(content);
 	}
 
 	public function close() {
@@ -832,10 +902,6 @@ class Editor extends Component {
 	public function focus() {
 		if( element.is(":focus") ) return;
 		(element[0] : Dynamic).focus({ preventScroll : true });
-		onFocus();
-	}
-
-	public dynamic function onFocus() {
 	}
 
 }

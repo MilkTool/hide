@@ -61,6 +61,7 @@ class Scene extends Component implements h3d.IDrawable {
 	var pathsMap = new Map<String, String>();
 	var cleanup = new Array<Void->Void>();
 	var defaultCamera : h3d.Camera;
+	var listeners = new Array<Float -> Void>();
 	public var config : hide.Config;
 	public var engine : h3d.Engine;
 	public var width(get, never) : Int;
@@ -98,6 +99,18 @@ class Scene extends Component implements h3d.IDrawable {
 		engine.dispose();
 	}
 
+	public function addListener(f) {
+		listeners.push(f);
+	}
+
+	public function removeListener(f) {
+		for( f2 in listeners )
+			if( Reflect.compareMethods(f,f2) ) {
+				listeners.remove(f2);
+				break;
+			}
+	}
+
 	function delayedInit() {
 		canvas.id = "webgl";
 		window = @:privateAccess new hxd.Window(canvas);
@@ -116,7 +129,7 @@ class Scene extends Component implements h3d.IDrawable {
 			window.setCurrent();
 			s2d = new h2d.Scene();
 			if (chunkifyS3D) {
-				s3d = new hide.Scene();
+				s3d = new hide.tools.ChunkedScene();
 			} else {
 				s3d = new h3d.scene.Scene();
 			}
@@ -131,7 +144,7 @@ class Scene extends Component implements h3d.IDrawable {
 		engine.onResized = function() {
 			if( s2d == null ) return;
 			visible = engine.width > 32 && engine.height > 32; // 32x32 when hidden !
-			s2d.setFixedSize(engine.width, engine.height);
+			s2d.scaleMode = Stretch(engine.width, engine.height);
 			onResize();
 		};
 		engine.init();
@@ -185,6 +198,8 @@ class Scene extends Component implements h3d.IDrawable {
 		var dt = hxd.Timer.tmod * speed / 60;
 		s2d.setElapsedTime(dt);
 		s3d.setElapsedTime(dt);
+		for( f in listeners )
+			f(dt);
 		onUpdate(dt);
 		engine.render(this);
 	}
@@ -421,7 +436,11 @@ class Scene extends Component implements h3d.IDrawable {
 			return hmd;
 
 		var relPath = StringTools.startsWith(path, ide.resourceDir) ? path.substr(ide.resourceDir.length+1) : path;
-		var e = try hxd.res.Loader.currentInstance.load(relPath) catch( e : hxd.res.NotFound ) null;
+		var e;
+		if( ide.isDebugger )
+			e = hxd.res.Loader.currentInstance.load(relPath);
+		else
+			e = try hxd.res.Loader.currentInstance.load(relPath) catch( e : hxd.res.NotFound ) null;
 		if( e == null || reload ) {
 			var data = sys.io.File.getBytes(fullPath);
 			if( data.get(0) != 'H'.code ) {

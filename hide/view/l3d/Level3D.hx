@@ -8,6 +8,7 @@ import hrt.prefab.Prefab as PrefabElement;
 import hrt.prefab.Object3D;
 import hrt.prefab.l3d.Instance;
 import h3d.scene.Object;
+import hide.comp.cdb.DataFiles;
 
 
 class LevelEditContext extends hide.prefab.EditContext {
@@ -60,8 +61,8 @@ class CamController extends h3d.scene.CameraController {
 					}
 					else {
 						var se = level3d.sceneEditor;
-						var fromPt = se.screenToWorld(pushX, pushY);
-						var toPt = se.screenToWorld(e.relX, e.relY);
+						var fromPt = se.screenToGround(pushX, pushY);
+						var toPt = se.screenToGround(e.relX, e.relY);
 						if(fromPt == null || toPt == null)
 							return;
 						var delta = toPt.sub(fromPt).toVector();
@@ -106,11 +107,6 @@ private class Level3DSceneEditor extends hide.comp.SceneEditor {
 		super.refresh(mode, callback);
 	}
 
-	override function refreshScene() {
-		super.refreshScene();
-		parent.onRefreshScene();
-	}
-
 	override function update(dt) {
 		super.update(dt);
 		parent.onUpdate(dt);
@@ -135,35 +131,18 @@ private class Level3DSceneEditor extends hide.comp.SceneEditor {
 		parent.onPrefabChange(p, pname);
 	}
 
-	override function selectObjects(elts:Array<PrefabElement>, ?mode ) {
-		super.selectObjects(elts, mode);
-		parent.onSelectObjects(elts);
-	}
-
-	override function projectToGround(ray: h3d.col.Ray) {
-		var polygons = parent.getGroundPolys();
-		var minDist = -1.;
-		for(polygon in polygons) {
-			var ctx = getContext(polygon);
-			var mesh = Std.downcast(ctx.local3d, h3d.scene.Mesh);
-			if(mesh == null)
-				continue;
-			var collider = mesh.getGlobalCollider();
-			var d = collider.rayIntersection(ray, true);
-			if(d > 0 && (d < minDist || minDist < 0)) {
-				minDist = d;
-			}
-		}
-		if(minDist >= 0)
-			return minDist;
-		return super.projectToGround(ray);
+	override function getGroundPrefabs():Array<PrefabElement> {
+		var prefabs = parent.getGroundPrefabs();
+		if( prefabs != null )
+			return prefabs;
+		return super.getGroundPrefabs();
 	}
 
 	override function getNewContextMenu(current: PrefabElement, ?onMake: PrefabElement->Void=null, ?groupByType = true ) {
 		var newItems = super.getNewContextMenu(current, onMake, groupByType);
 
 		function setup(p : PrefabElement) {
-			var proj = screenToWorld(scene.s2d.width/2, scene.s2d.height/2);
+			var proj = screenToGround(scene.s2d.width/2, scene.s2d.height/2);
 			var obj3d = p.to(hrt.prefab.Object3D);
 			var autoCenter = proj != null && obj3d != null && (Type.getClass(p) != Object3D || p.parent != sceneData);
 			if(autoCenter) {
@@ -180,30 +159,26 @@ private class Level3DSceneEditor extends hide.comp.SceneEditor {
 		}
 
 		function addNewInstances() {
-			var types = Level3D.getCdbTypes();
 			var items = new Array<hide.comp.ContextMenu.ContextMenuItem>();
-			for(type in types) {
-				var typeId = Level3D.getCdbTypeId(type);
+			for(type in DataFiles.getAvailableTypes() ) {
+				var typeId = DataFiles.getTypeName(type);
 				var label = typeId.charAt(0).toUpperCase() + typeId.substr(1);
 
-				var refCol = Instance.findRefColumn(type);
-				if(refCol == null)
-					continue;
-				var refSheet = type.base.getSheet(refCol.sheet);
-				var idCol = Instance.findIDColumn(refSheet);
+				var refCols = Instance.findRefColumns(type);
+				var refSheet = refCols == null ? null : type.base.getSheet(refCols.sheet);
+				var idCol = refCols == null ? null : Instance.findIDColumn(refSheet);
 
 				function make(name) {
 					var p = new hrt.prefab.l3d.Instance(current == null ? sceneData : current);
-					p.props = type.getDefaults();
-					Reflect.setField(p.props, "$cdbtype", typeId);
 					p.name = name;
+					p.props = makeCdbProps(p, type);
 					setup(p);
 					if(onMake != null)
 						onMake(p);
 					return p;
 				}
 
-				if(idCol != null) {
+				if(idCol != null && refSheet.props.dataFiles == null ) {
 					var kindItems = new Array<hide.comp.ContextMenu.ContextMenuItem>();
 					for(line in refSheet.lines) {
 						var kind : String = Reflect.getProperty(line, idCol.name);
@@ -211,7 +186,19 @@ private class Level3DSceneEditor extends hide.comp.SceneEditor {
 							label : kind,
 							click : function() {
 								var p = make(kind.charAt(0).toLowerCase() + kind.substr(1));
-								Reflect.setField(p.props, refCol.col.name, kind);
+								var obj : Dynamic = p.props;
+								for( c in refCols.cols ) {
+									if( c == refCols.cols[refCols.cols.length-1] )
+										Reflect.setField(obj, c.name, kind);
+									else {
+										var s = Reflect.field(obj,c.name);
+										if( s == null ) {
+											s = {};
+											Reflect.setField(obj, c.name, s);
+										}
+										obj = s;
+									}
+								}
 							}
 						});
 					}
@@ -234,58 +221,6 @@ private class Level3DSceneEditor extends hide.comp.SceneEditor {
 		};
 		addNewInstances();
 		return newItems;
-	}
-
-	override function fillProps(edit:hide.prefab.EditContext, e:PrefabElement) {
-		super.fillProps(edit, e);
-
-		var sheet = Level3D.getCdbModel(e);
-		var group = new hide.Element('
-			<div class="group" name="CDB">
-				<dl><dt>Type</dt><dd><select><option value="">- No props -</option></select></dd>
-			</div>
-		');
-
-		var select = group.find("select");
-		var cdbTypes = Level3D.getCdbTypes();
-		for(t in cdbTypes) {
-			var current = sheet != null && sheet.name == t.name;
-			var id = Level3D.getCdbTypeId(t);
-			var opt = new hide.Element("<option>").attr("value", id).text(id).appendTo(select);
-		}
-		if(sheet != null) {
-			select.val(Level3D.getCdbTypeId(sheet));
-		}
-
-		function changeProps(props: Dynamic) {
-			properties.undo.change(Field(e, "props", e.props), ()->edit.rebuildProperties());
-			e.props = props;
-			edit.onChange(e, "props");
-			edit.rebuildProperties();
-		}
-
-		select.change(function(v) {
-			var typeId = select.val();
-			if(typeId == null || typeId == "") {
-				changeProps(null);
-				return;
-			}
-			var cdbSheet = Level3D.resolveCdbType(typeId);
-			var props = cdbSheet.getDefaults();
-			Reflect.setField(props, "$cdbtype", typeId);
-			changeProps(props);
-		});
-
-		edit.properties.add(group);
-
-		if(sheet != null) {
-			var props = new hide.Element('<div></div>').appendTo(group.find(".content"));
-			var editor = new hide.comp.cdb.ObjEditor(sheet, parent.config, e.props, props);
-			editor.undo = properties.undo;
-			editor.onChange = function(pname) {
-				edit.onChange(e, 'props.$pname');
-			}
-		}
 	}
 
 	override function getAvailableTags(p:PrefabElement) {
@@ -317,7 +252,6 @@ class Level3D extends FileView {
 	var sceneFilters : Map<String, Bool>;
 	var statusText : h2d.Text;
 	var posToolTip : h2d.Text;
-	var lastRenderProps : hrt.prefab.RenderProps = null;
 
 	var scene(get, null):  hide.comp.Scene;
 	function get_scene() return sceneEditor.scene;
@@ -325,7 +259,7 @@ class Level3D extends FileView {
 	function get_properties() return sceneEditor.properties;
 
 	override function onDisplay() {
-		data = new hrt.prefab.l3d.Level3D();
+		data = cast(hrt.prefab.Library.create("l3d"), hrt.prefab.l3d.Level3D);
 		var content = sys.io.File.getContent(getPath());
 		data.loadData(haxe.Json.parse(content));
 		currentSign = haxe.crypto.Md5.encode(content);
@@ -336,7 +270,7 @@ class Level3D extends FileView {
 					<span class="tools-buttons"></span>
 					<span class="layer-buttons"></span>
 				</div>
-				<div style="display: flex; flex-direction: row; flex: 1;">
+				<div style="display: flex; flex-direction: row; flex: 1; overflow: hidden;">
 					<div class="heaps-scene">
 					</div>
 					<div class="hide-scene-outliner">
@@ -367,6 +301,7 @@ class Level3D extends FileView {
 		tools = new hide.comp.Toolbar(null,element.find(".tools-buttons"));
 		layerToolbar = new hide.comp.Toolbar(null,element.find(".layer-buttons"));
 		tabs = new hide.comp.Tabs(null,element.find(".tabs"));
+		tabs.allowMask();
 		currentVersion = undo.currentID;
 
 		levelProps = new hide.comp.PropsEditor(undo,null,element.find(".level-props"));
@@ -601,7 +536,7 @@ class Level3D extends FileView {
 	function onUpdate(dt:Float) {
 		if(hxd.Key.isDown(hxd.Key.ALT)) {
 			posToolTip.visible = true;
-			var proj = sceneEditor.screenToWorld(scene.s2d.mouseX, scene.s2d.mouseY);
+			var proj = sceneEditor.screenToGround(scene.s2d.mouseX, scene.s2d.mouseY);
 			posToolTip.text = proj != null ? '${Math.fmt(proj.x)}, ${Math.fmt(proj.y)}, ${Math.fmt(proj.z)}' : '???';
 			posToolTip.setPosition(scene.s2d.mouseX, scene.s2d.mouseY - 12);
 		}
@@ -616,20 +551,6 @@ class Level3D extends FileView {
 	}
 
 	function onRefresh() {
-	}
-
-	function onRefreshScene() {
-		if(lastRenderProps != null) {
-			lastRenderProps.applyProps(scene.s3d.renderer);
-		}
-		else {
-			// Apply first render props (either defaults or first found)
-			var renderProps = data.getOpt(hrt.prefab.RenderProps, "defaults");
-			if( renderProps == null )
-				renderProps = data.getOpt(hrt.prefab.RenderProps);
-			if( renderProps != null )
-				renderProps.applyProps(scene.s3d.renderer);
-		}
 	}
 
 	override function onDragDrop(items : Array<String>, isDrop : Bool) {
@@ -655,7 +576,7 @@ class Level3D extends FileView {
 		saveDisplayState("sceneFilters/" + typeid, visible);
 		var all = data.flatten(hrt.prefab.Prefab);
 		for(p in all) {
-			if(p.type == typeid || getCdbTypeId(p) == typeid) {
+			if(p.type == typeid || p.getCdbType() == typeid) {
 				sceneEditor.applySceneStyle(p);
 			}
 		}
@@ -663,8 +584,9 @@ class Level3D extends FileView {
 
 	function refreshSceneFilters() {
 		var filters : Array<String> = ide.currentConfig.get("l3d.filterTypes");
-		for(sheet in getCdbTypes()) {
-			filters.push(getCdbTypeId(sheet));
+		filters = filters.copy();
+		for(sheet in DataFiles.getAvailableTypes()) {
+			filters.push(DataFiles.getTypeName(sheet));
 		}
 		sceneFilters = new Map();
 		for(f in filters) {
@@ -713,14 +635,8 @@ class Level3D extends FileView {
 
 	}
 
-	function onSelectObjects(elts: Array<PrefabElement>) {
-		var renderProps = Std.downcast(elts.find(e -> Std.is(e, hrt.prefab.RenderProps)), hrt.prefab.RenderProps);
-		if(renderProps != null)
-			lastRenderProps = renderProps;
-	}
-
 	function applySceneStyle(p: PrefabElement) {
-		var level3d = p.to(hrt.prefab.l3d.Level3D);
+		var level3d = Std.downcast(p, hrt.prefab.l3d.Level3D); // don't use "to" (Reference)
 		if(level3d != null) {
 			updateGrid();
 			return;
@@ -729,21 +645,12 @@ class Level3D extends FileView {
 		if(obj3d != null) {
 			var visible = obj3d.visible && !sceneEditor.isHidden(obj3d) && sceneFilters.get(p.type) != false;
 			if(visible) {
-				var cdbType = getCdbTypeId(p);
+				var cdbType = p.getCdbType();
 				if(cdbType != null && sceneFilters.get(cdbType) == false)
 					visible = false;
 			}
 			for(ctx in sceneEditor.getContexts(obj3d)) {
 				ctx.local3d.visible = visible;
-			}
-			var interIsVisible = !sceneEditor.isLocked(obj3d);
-			var inters = sceneEditor.getInteractives(p);
-			for(inter in inters) {
-				if(inter != null) {
-					var i3d = Std.downcast(inter,h3d.scene.Interactive);
-					if( i3d != null )
-						i3d.visible = interIsVisible;
-				}
 			}
 		}
 		var color = getDisplayColor(p);
@@ -763,7 +670,7 @@ class Level3D extends FileView {
 	}
 
 	function getDisplayColor(p: PrefabElement) : Null<Int> {
-		var typeId = getCdbTypeId(p);
+		var typeId = p.getCdbType();
 		if(typeId != null) {
 			var colors = ide.currentConfig.get("l3d.colors");
 			var color = Reflect.field(colors, typeId);
@@ -774,49 +681,18 @@ class Level3D extends FileView {
 		return null;
 	}
 
-	function getGroundPolys() {
+	function getGroundPrefabs() {
 		var groundGroups = data.findAll(p -> if(p.name == "ground") p else null);
-		var ret = [];
+		if( groundGroups.length == 0 )
+			return null;
+		var ret : Array<hrt.prefab.Prefab> = [];
 		for(group in groundGroups)
-			group.findAll(function(p) {
+			group.findAll(function(p) : hrt.prefab.Prefab {
 				if(p.name == "nocollide")
 					return null;
-				return p.to(hrt.prefab.l3d.Polygon);
+				return p;
 			},ret);
 		return ret;
-	}
-
-	static function getLevelSheet() {
-		return Ide.inst.database.getSheet(Ide.inst.currentConfig.get("l3d.cdbLevel", "level"));
-	}
-
-	static function resolveCdbType(id: String) {
-		var types = Level3D.getCdbTypes();
-		return types.find(t -> getCdbTypeId(t) == id);
-	}
-
-	static function getCdbTypes() {
-		var levelSheet = getLevelSheet();
-		if(levelSheet == null) return [];
-		return [for(c in levelSheet.columns) if(c.type == TList) levelSheet.getSub(c)];
-	}
-
-	static function getCdbTypeId(?p: PrefabElement, ?sheet: cdb.Sheet) : String {
-		if(p != null) {
-			if(p.props == null)
-				return null;
-			return Reflect.getProperty(p.props, "$cdbtype");
-		}
-		else {
-			return sheet.name.split("@").pop();
-		}
-	}
-
-	static function getCdbModel(e:hrt.prefab.Prefab):cdb.Sheet {
-		var typeName : String = getCdbTypeId(e);
-		if(typeName == null)
-			return null;
-		return resolveCdbType(typeName);
 	}
 
 	static var _ = FileTree.registerExtension(Level3D,["l3d"],{ icon : "sitemap", createNew : "Level3D" });

@@ -3,11 +3,15 @@
 	"hmd.animPaths" : [],
 	"hmd.savePropsByAnimation" : false,
 
+	// extra main menu content
+	"menu.extra" : "",
+
 	// path to js scripts containing hide plugins
 	"plugins" : [],
 
 	// custom renderers in the form of { "Name" : "MaterialSetupClassName" }
 	"renderers" : {},
+	"defaultRenderer" : "PBR",
 
 	// set default renderer setup
 	"scene.renderProps" : null,
@@ -41,11 +45,15 @@
 	// view keys
 
 	"key.view.fullScreen" : "F11",
+	"key.view.refresh" : "F5",
+	"key.view.refreshApp" : "Ctrl-F5",
 
 	// File tree
 	"filetree.excludes": [
 		"(^|\/)\\.[^.]*$"
 	],
+	// allowed new extensions
+	"filetree.allowednew": ["*"],
 
 	// cdb keys
 
@@ -69,6 +77,14 @@
 
 	// cdb config
 	"cdb.databaseFile" : "data.cdb",
+	"cdb": {
+		// When file column contains an image - controls whenever it should provide inline preview of the image instead of file path.
+		"inlineImageFiles": false
+	},
+	// It's possible to separately control CDB configurations per sheet and column with following keys:
+	// "cdb.mySheetName": { /* Applies to all File columns in sheet with mySheetName */ }
+	// "cdb.mySheetName.myColumnName": { /* Applies only to File column with name myColumnName, located in mySheetName */ }
+	// "cdb.mySheetName.mySubSheet.myColumnName": { /* Applies to colum in a subsheet (Properties/lists) */ }
 
 	// script support
 	"script.api.files" : [],
@@ -97,6 +113,9 @@
 	"sceneeditor.rotatePrecision": 0.1,
 
 	"sceneeditor.newgroups" : ["2D|hrt.prefab.Object2D","3D|hrt.prefab.Object3D","RFX|hrt.prefab.rfx.RendererFX"],
+
+	"sceneeditor.icons" : {},
+	"sceneeditor.ranges" : {},
 
 	// l3d config
 	"l3d.groundLayer": "ground",

@@ -1,8 +1,10 @@
 package hrt.prefab.fx;
+import hrt.prefab.fx.BaseFX.AdditionalProperies;
 import hrt.prefab.Curve;
 import hrt.prefab.Prefab as PrefabElement;
 import hrt.prefab.fx.BaseFX.ObjectAnimation;
 import hrt.prefab.fx.BaseFX.ShaderAnimation;
+
 
 @:allow(hrt.prefab.fx.FX)
 class FXAnimation extends h3d.scene.Object {
@@ -85,7 +87,7 @@ class FXAnimation extends h3d.scene.Object {
 		if(emitters != null)
 			for(emitter in emitters)
 				emitter.setParticleVibility(ctx.visibleFlag);
-		
+
 		if (additionLoopDuration > 0) {
 			if (totalTime > startLoop) {
 				var timeLeft = endLoop + additionLoopDuration - totalTime;
@@ -162,6 +164,35 @@ class FXAnimation extends h3d.scene.Object {
 					}
 				}
 				Event.updateEvents(anim.events, time, prevTime);
+
+				if( anim.additionalProperies != null ) {
+					switch(anim.additionalProperies) {
+						case None :
+						case PointLight( color, power, size, range ) :
+							var l = Std.downcast(anim.obj, h3d.scene.pbr.PointLight);
+							if( l != null ) {
+								if( color != null ) l.color = evaluator.getVector(color, time, tempVec);
+								if( power != null ) l.power = evaluator.getFloat(power, time);
+								if( size != null ) l.size = evaluator.getFloat(size, time);
+								if( range != null ) l.range = evaluator.getFloat(range, time);
+							}
+						case DirLight(color, power):
+							var l = Std.downcast(anim.obj, h3d.scene.pbr.DirLight);
+							if( l != null ) {
+								if( color != null ) l.color = evaluator.getVector(color, time, tempVec);
+								if( power != null ) l.power = evaluator.getFloat(power, time);
+							}
+						case SpotLight(color, power, range, angle, fallOff):
+							var l = Std.downcast(anim.obj, h3d.scene.pbr.SpotLight);
+							if( l != null ) {
+								if( color != null ) l.color = evaluator.getVector(color, time, tempVec);
+								if( power != null ) l.power = evaluator.getFloat(power, time);
+								if( range != null ) l.range = evaluator.getFloat(range, time);
+								if( angle != null ) l.angle = evaluator.getFloat(angle, time);
+								if( fallOff != null ) l.fallOff = evaluator.getFloat(fallOff, time);
+							}
+					}
+				}
 			}
 		}
 
@@ -171,8 +202,10 @@ class FXAnimation extends h3d.scene.Object {
 
 		if(emitters != null) {
 			for(em in emitters) {
-				if (prevTime > localTime)
+				if (prevTime > localTime) {
 					@:privateAccess em.curTime = em.lastTime = time;
+					em.reset();
+				}
 				if(em.visible)
 					em.setTime(time);
 			}
@@ -246,6 +279,17 @@ class FXAnimation extends h3d.scene.Object {
 			return Curve.getColorValue(curves);
 		}
 
+		var ap : AdditionalProperies = null;
+		if( Std.is(objCtx.local3d, h3d.scene.pbr.PointLight)) {
+			ap = PointLight(makeColor("color"), makeVal("power", null), makeVal("size", null), makeVal("range", null) );
+		}
+		else if( Std.is(objCtx.local3d, h3d.scene.pbr.SpotLight)) {
+			ap = SpotLight(makeColor("color"), makeVal("power", null), makeVal("range", null), makeVal("angle", null), makeVal("fallOff", null) );
+		}
+		else if( Std.is(objCtx.local3d, h3d.scene.pbr.DirLight)) {
+			ap = DirLight(makeColor("color"), makeVal("power", null));
+		}
+
 		var anim : ObjectAnimation = {
 			elt: obj3d,
 			obj: objCtx.local3d,
@@ -255,6 +299,7 @@ class FXAnimation extends h3d.scene.Object {
 			rotation: makeVector("rotation", 0.0, 360.0),
 			color: makeColor("color"),
 			visibility: makeVal("visibility", null),
+			additionalProperies: ap,
 		};
 
 		anim.events = initEvents(elt, objCtx);
@@ -310,10 +355,7 @@ class FXAnimation extends h3d.scene.Object {
 			if( srcObj != null && targetObj != null ) {
 				srcObj.follow = targetObj;
 				srcObj.followPositionOnly = co.positionOnly;
-				//trace ("Resolve constraint for FX : " + objectName + " to " + targetName);
 			}
-			else
-				trace ("Failed te resolve constraint for FX : "+ this.toString() + ", from " + objectName + " to " + targetName);
 		}
 	}
 }

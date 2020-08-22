@@ -6,6 +6,12 @@
 	margin-bottom: 350px;
 }
 
+.cdb-view.cdb-diff {
+	.cdb-sheet th, th.start {
+		background-color: #d60;
+	}
+}
+
 .cdb {
 
 	background-color : black;
@@ -46,6 +52,7 @@
 		th.start {
 			width : 30px;
 			border-left-color : #333;
+			cursor:default;
 		}
 		td.start {
 			text-align : center;
@@ -59,14 +66,23 @@
 		}
 
 		tr.separator {
-			background-color : #444;
 			height : 10px;
 			td {
+				position: sticky;
+				top: 19px;
 				border-left: none;
 				padding-top: 6px;
 				color : #bbb;
 				font-weight : bold;
 				padding-left : 20px;
+				background-color : #444;
+				.toggle {
+					padding : 0px 4px;
+					color : #aaa;
+					&:hover {
+						color : #ccc;
+					}
+				}
 			}
 		}
 
@@ -75,7 +91,7 @@
 			overflow : hidden;
 		}
 
-		tr.props td {
+		tr.props td, tr.code td {
 			overflow : visible; // for flags dropdown
 		}
 
@@ -109,7 +125,7 @@
 			padding-bottom : 0px;
 		}
 
-		tr.filtered {
+		tr.filtered, tr.hidden {
 			display : none;
 		}
 
@@ -121,17 +137,24 @@
 			background-color : #f8f8f8;
 		}
 
+		&:not(.cdb-sub-sheet) > thead.head > th {
+			position: sticky;
+			top: 0;
+		}
+
 		tr.head, th {
 			font-weight: bold;
 			text-align: center;
-			padding: 1px 10px;
-			border-bottom : 1px solid #666;
-			border-left: 1px solid #555;
+			padding: 1px 10px 4px 10px;
+			box-shadow: inset 0px -1px 1px #666;
+			border-left: 1px solid #444;
 			background-color : #222;
 			color : #ddd;
 			width: auto;
 			white-space: nowrap;
 			overflow: hidden;
+			cursor: pointer;
+			user-select: none;
 		}
 
 		tr.head .display {
@@ -227,6 +250,9 @@
 		td.t_list, td.t_properties {
 			white-space: nowrap;
 			cursor : pointer;
+			text-overflow: ellipsis;
+			max-width: 900;
+			overflow: hidden!important;
 			img {
 				max-height: 32px;
 				max-width: 32px;
@@ -309,6 +335,9 @@
 			.cdb-sheet {
 				th {
 					width: 200px;
+					&.start {
+						width : 20px;
+					}
 				}
 				td, td > input {
 					text-align: left;
@@ -326,14 +355,20 @@
 					.label {
 						text-align : center;
 						margin-bottom : 5px;
-						background-color : white;
+						background-color: #444;
 						font-family : monospace;
 					}
 					display : none;
 					position : absolute;
-					background-color : #EEE;
+					background-color : #333;
+					color: white;
 					border : 1px solid black;
 					padding : 5px;
+				}
+			}
+			.inlineImage {
+				>img {
+					max-height: 100px;
 				}
 			}
 			.preview:hover {
@@ -356,6 +391,22 @@
 			}
 		}
 
+	}
+
+	&.cdb-obj-editor {
+		margin-top : 10px;
+		>.cdb-sheet {
+			border : 2px solid #333;
+			>tr>th {
+				width : 50px;
+			}
+			tr.props .cdb-sheet > tr > th {
+				width : 50px;
+			}
+		}
+		div.cdb-large .cdb-sheet {
+			min-width: 0 !important;
+		}
 	}
 
 	.floating-thead {
@@ -389,6 +440,9 @@
 			input[type=text], input[type=submit], select {
 				height: 28px;
 			}
+			td {
+				vertical-align: top;
+			}
 			td.first {
 				width : 120px;
 			}
@@ -402,8 +456,17 @@
 			.t_ref .sheet { display : table-row; }
 			.t_layer .sheet { display : table-row; }
 			.t_custom .custom { display : table-row; }
-			.values, .sheet, .custom, .disp, .kind { display : none; }
-
+			.t_id .scope { display : table-row; }
+			.values, .sheet, .custom, .disp, .kind, .scope { display : none; }
+			#doctog {
+				cursor:pointer;
+				color : #888;
+			}
+			.doc.hide {
+				span, textarea {
+					display: none;
+				}
+			}
 		}
 
 		form.edit {

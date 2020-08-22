@@ -79,16 +79,21 @@ class Reference extends Object3D {
 		if(isFile()) {
 			ctx = super.makeInstance(ctx);
 			ctx.isRef = true;
+			var prevPath = ctx.shared.currentPath;
+			ctx.shared.currentPath = refpath;
 			p.make(ctx);
+			ctx.shared.currentPath = prevPath;
 
 			#if editor
-			var path = hide.Ide.inst.appPath + "/res/icons/fileRef.png";
-			var data = sys.io.File.getBytes(path);
-			var tile = hxd.res.Any.fromBytes(path, data).toTile().center();
-			var objFollow = new h2d.ObjectFollower(ctx.local3d, ctx.shared.root2d);
-			objFollow.followVisibility = true;
-			var bmp = new h2d.Bitmap(tile, objFollow);
-			ctx.local2d = objFollow;
+			if (ctx.local2d == null) {
+				var path = hide.Ide.inst.appPath + "/res/icons/fileRef.png";
+				var data = sys.io.File.getBytes(path);
+				var tile = hxd.res.Any.fromBytes(path, data).toTile().center();
+				var objFollow = new h2d.ObjectFollower(ctx.local3d, ctx.shared.root2d);
+				objFollow.followVisibility = true;
+				var bmp = new h2d.Bitmap(tile, objFollow);
+				ctx.local2d = objFollow;
+			}
 			#end
 
 		}

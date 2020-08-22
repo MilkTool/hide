@@ -4,6 +4,10 @@
 .cdb-view .cdb {
   margin-bottom: 350px;
 }
+.cdb-view.cdb-diff .cdb-sheet th,
+.cdb-view.cdb-diff th.start {
+  background-color: #d60;
+}
 .cdb {
   background-color: black;
 }
@@ -40,6 +44,7 @@
 .cdb .cdb-sheet th.start {
   width: 30px;
   border-left-color: #333;
+  cursor: default;
 }
 .cdb .cdb-sheet td.start {
   text-align: center;
@@ -51,21 +56,31 @@
   cursor: nw-resize;
 }
 .cdb .cdb-sheet tr.separator {
-  background-color: #444;
   height: 10px;
 }
 .cdb .cdb-sheet tr.separator td {
+  position: sticky;
+  top: 19px;
   border-left: none;
   padding-top: 6px;
   color: #bbb;
   font-weight: bold;
   padding-left: 20px;
+  background-color: #444;
+}
+.cdb .cdb-sheet tr.separator td .toggle {
+  padding: 0px 4px;
+  color: #aaa;
+}
+.cdb .cdb-sheet tr.separator td .toggle:hover {
+  color: #ccc;
 }
 .cdb .cdb-sheet td {
   padding: 2px 4px;
   overflow: hidden;
 }
-.cdb .cdb-sheet tr.props td {
+.cdb .cdb-sheet tr.props td,
+.cdb .cdb-sheet tr.code td {
   overflow: visible;
 }
 .cdb .cdb-sheet > tbody > tr.props:last-child {
@@ -98,7 +113,8 @@
 .cdb .cdb-sheet td.edit_long {
   padding-bottom: 0px;
 }
-.cdb .cdb-sheet tr.filtered {
+.cdb .cdb-sheet tr.filtered,
+.cdb .cdb-sheet tr.hidden {
   display: none;
 }
 .cdb .cdb-sheet tr.clickable {
@@ -107,18 +123,24 @@
 .cdb .cdb-sheet tr.clickable:hover {
   background-color: #f8f8f8;
 }
+.cdb .cdb-sheet:not(.cdb-sub-sheet) > thead.head > th {
+  position: sticky;
+  top: 0;
+}
 .cdb .cdb-sheet tr.head,
 .cdb .cdb-sheet th {
   font-weight: bold;
   text-align: center;
-  padding: 1px 10px;
-  border-bottom: 1px solid #666;
-  border-left: 1px solid #555;
+  padding: 1px 10px 4px 10px;
+  box-shadow: inset 0px -1px 1px #666;
+  border-left: 1px solid #444;
   background-color: #222;
   color: #ddd;
   width: auto;
   white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
+  user-select: none;
 }
 .cdb .cdb-sheet tr.head .display {
   font-style: italic;
@@ -203,6 +225,9 @@
 .cdb .cdb-sheet td.t_properties {
   white-space: nowrap;
   cursor: pointer;
+  text-overflow: ellipsis;
+  max-width: 900;
+  overflow: hidden!important;
 }
 .cdb .cdb-sheet td.t_list img,
 .cdb .cdb-sheet td.t_properties img {
@@ -284,6 +309,9 @@
 .cdb .cdb-sheet tr.props .cdb-sheet th {
   width: 200px;
 }
+.cdb .cdb-sheet tr.props .cdb-sheet th.start {
+  width: 20px;
+}
 .cdb .cdb-sheet tr.props .cdb-sheet td,
 .cdb .cdb-sheet tr.props .cdb-sheet td > input {
   text-align: left;
@@ -291,15 +319,19 @@
 .cdb .cdb-sheet td.t_file .preview .previewContent {
   display: none;
   position: absolute;
-  background-color: #EEE;
+  background-color: #333;
+  color: white;
   border: 1px solid black;
   padding: 5px;
 }
 .cdb .cdb-sheet td.t_file .preview .previewContent .label {
   text-align: center;
   margin-bottom: 5px;
-  background-color: white;
+  background-color: #444;
   font-family: monospace;
+}
+.cdb .cdb-sheet td.t_file .inlineImage > img {
+  max-height: 100px;
 }
 .cdb .cdb-sheet td.t_file .preview:hover .previewContent {
   display: block;
@@ -314,6 +346,21 @@
 .cdb .cdb-sheet div.cdb-script .codeeditor {
   min-width: 500px;
   min-height: 200px;
+}
+.cdb.cdb-obj-editor {
+  margin-top: 10px;
+}
+.cdb.cdb-obj-editor > .cdb-sheet {
+  border: 2px solid #333;
+}
+.cdb.cdb-obj-editor > .cdb-sheet > tr > th {
+  width: 50px;
+}
+.cdb.cdb-obj-editor > .cdb-sheet tr.props .cdb-sheet > tr > th {
+  width: 50px;
+}
+.cdb.cdb-obj-editor div.cdb-large .cdb-sheet {
+  min-width: 0 !important;
 }
 .cdb .floating-thead {
   position: fixed;
@@ -346,6 +393,9 @@
 .cdb .content-modal form select {
   height: 28px;
 }
+.cdb .content-modal form td {
+  vertical-align: top;
+}
 .cdb .content-modal form td.first {
   width: 120px;
 }
@@ -369,11 +419,23 @@
 .cdb .content-modal form .t_custom .custom {
   display: table-row;
 }
+.cdb .content-modal form .t_id .scope {
+  display: table-row;
+}
 .cdb .content-modal form .values,
 .cdb .content-modal form .sheet,
 .cdb .content-modal form .custom,
 .cdb .content-modal form .disp,
-.cdb .content-modal form .kind {
+.cdb .content-modal form .kind,
+.cdb .content-modal form .scope {
+  display: none;
+}
+.cdb .content-modal form #doctog {
+  cursor: pointer;
+  color: #888;
+}
+.cdb .content-modal form .doc.hide span,
+.cdb .content-modal form .doc.hide textarea {
   display: none;
 }
 .cdb .content-modal form.edit input.create {

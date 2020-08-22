@@ -89,6 +89,14 @@ class Prefab {
 	public function setSelected( ctx : Context, b : Bool ) {
 		return true;
 	}
+
+	/**
+		Allows the prefab to create an interactive so it can be selected in the scene.
+	**/
+	public function makeInteractive( ctx : Context ) : hxd.SceneEvents.Interactive {
+		return null;
+	}
+
 	#end
 
 	/**
@@ -234,18 +242,14 @@ class Prefab {
 		return ctx;
 	}
 
-	#if castle
 	/**
-		Returns which CDB model this prefab props represents
-	**/
-	public function getCdbModel( ?p : Prefab ) : cdb.Sheet {
-		if( p == null )
-			p = this;
-		if( parent != null )
-			return parent.getCdbModel(p);
-		return null;
+	 	If the prefab `props` represent CDB data, returns the sheet name of it, or null.
+	 **/
+	public function getCdbType() : String {
+		if( props == null )
+			return null;
+		return Reflect.field(props, "$cdbtype");
 	}
-	#end
 
 	/**
 		Search the prefab tree for the prefab matching the given name, returns null if not found
@@ -259,6 +263,34 @@ class Prefab {
 				return p;
 		}
 		return null;
+	}
+
+	/**
+		Search the prefab tree for the prefabs matching the given path.
+		Can use wildcards, such as `*`/level`*`/collision
+	**/
+	public function getPrefabsByPath( path : String ) {
+		var out = [];
+		if( path == "" )
+			out.push(this);
+		else
+			getPrefabsByPathRec(path.split("."), 0, out);
+		return out;
+	}
+
+	function getPrefabsByPathRec( parts : Array<String>, index : Int, out : Array<Prefab> ) {
+		var name = parts[index++];
+		if( name == null ) {
+			out.push(this);
+			return;
+		}
+		var r = name.indexOf('*') < 0 ? null : new EReg("^"+name.split("*").join(".*")+"$","");
+		for( c in children ) {
+			var cname = c.name;
+			if( cname == null ) cname = c.getDefaultName();
+			if( r == null ? c.name == name : r.match(cname) )
+				c.getPrefabsByPathRec(parts, index, out);
+		}
 	}
 
 	/**

@@ -75,7 +75,36 @@ class PropsEditor extends Component {
 			var e = new Element('<select field="${p.name}"></select>').appendTo(parent);
 		case PFile(exts):
 			new Element('<input type="texturepath" extensions="${exts.join(" ")}" field="${p.name}">').appendTo(parent);
+		case PString(len):
+			var e = new Element('<input type="text" field="${p.name}">').appendTo(parent);
+			if ( len != null ) e.attr("maxlength", "" + len);
+			if ( p.def != null ) e.attr("value", "" + p.def);
 		}
+	}
+
+	public static function makeGroupEl(name: String, content: Element) {
+		var el = new Element('<div class="group" name="${name}"></div>');
+		content.appendTo(el);
+		return el;
+	}
+
+	public static function makeSectionEl(name: String, content: Element, ?headerContent: Element) {
+		var el = new Element('<div class="section"><h1><span>${name}</span></h1><div class="content"></div></div>');
+		if (headerContent != null) headerContent.appendTo(el.find("h1"));
+		content.appendTo(el.find(".content"));
+		return el;
+	}
+
+	public static function makeLabelEl(name: String, content: Element) {
+		var el = new Element('<dt>${name}</dt><dd></dd>');
+		content.appendTo(el.find("dd"));
+		return el;
+	}
+
+	public static function makeListEl(content:Array<Element>) {
+		var el = new Element("<dl>");
+		for ( e in content ) e.appendTo(el);
+		return el;
 	}
 
 	static function upperCase(prop: String) {
@@ -98,12 +127,21 @@ class PropsEditor extends Component {
 	}
 
 	public function add( e : Element, ?context : Dynamic, ?onChange : String -> Void ) {
-
 		e.appendTo(element);
+		return build(e,context,onChange);
+	}
+
+	public function build( e : Element, ?context : Dynamic, ?onChange : String -> Void ) {
 		e = e.wrap("<div></div>").parent(); // necessary to have find working on top level element
 
 		e.find("input[type=checkbox]").wrap("<div class='checkbox-wrapper'></div>");
 		e.find("input[type=range]").not("[step]").attr({step: "any", tabindex:"-1"});
+
+		// Wrap dt+dd for nw versions of 0.4x+
+		for ( el in e.find("dt").wrap("<div></div>").parent().elements() ) {
+			var n = el.next();
+			if (n.length != 0 && n[0].tagName == "DD") n.appendTo(el);
+		}
 
 		// -- reload states ---
 		for( h in e.find(".section > h1").elements() )
@@ -119,6 +157,10 @@ class PropsEditor extends Component {
 			section.children(".content").slideToggle(100);
 			saveDisplayState("section:" + StringTools.trim(e.getThis().text()), section.hasClass("open"));
 		}).find("input").mousedown(function(e) e.stopPropagation());
+
+		e.find("input[type=section_name]").change(function(e) {
+			e.getThis().closest(".section").find(">h1 span").text(e.getThis().val());
+		});
 
 		// init groups
 		var gindex = 0;
@@ -151,6 +193,10 @@ class PropsEditor extends Component {
 			saveDisplayState("group:" + key, group.hasClass("open"));
 
 		}).find("input").mousedown(function(e) e.stopPropagation());
+
+		e.find("input[type=group_name]").change(function(e) {
+			e.getThis().closest(".group").find(">.title").val(e.getThis().val());
+		});
 
 		// init input reflection
 		for( f in e.find("[field]").elements() ) {
@@ -274,8 +320,10 @@ class PropsField extends Component {
 				onChange(false);
 			};
 			return;
-		case "file":
-			fselect = new hide.comp.FileSelect(f.attr("extensions").split(" "), null, f);
+		case "fileselect":
+			var exts = f.attr("extensions");
+			if( exts == null ) exts = "*";
+			fselect = new hide.comp.FileSelect(exts.split(" "), null, f);
 			fselect.path = current;
 			fselect.onChange = function() {
 				undo(function() {

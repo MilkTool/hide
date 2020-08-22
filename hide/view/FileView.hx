@@ -21,13 +21,20 @@ class FileView extends hide.ui.View<{ path : String }> {
 			}, { checkDelete : true, keepOnRebuild : true });
 	}
 
-	override function rebuild() {
-		saveDisplayKey = Type.getClassName(Type.getClass(this)) + ":" + getPath().split("\\").join("/");
-		super.rebuild();
+	override function onRebuild() {
+		var path = getPath();
+		if( path != null ) {
+			saveDisplayKey = Type.getClassName(Type.getClass(this)) + ":" + path.split("\\").join("/");
+			if( !sys.FileSystem.exists(path) ) {
+				element.html('${state.path} no longer exists');
+				return;
+			}
+		}
+		super.onRebuild();
 	}
 
 	function onFileChanged( wasDeleted : Bool, rebuildView = true ) {
-		if( !wasDeleted ) {
+		if( !wasDeleted && currentSign != null ) {
 			// double check if content has changed
 			var content = sys.io.File.getContent(getPath());
 			var sign = haxe.crypto.Md5.encode(content);
@@ -39,6 +46,7 @@ class FileView extends hide.ui.View<{ path : String }> {
 			element.html('${state.path} no longer exists');
 			return;
 		}
+
 		if( modified && !ide.confirm('${state.path} has been modified, reload and ignore local changes?') )
 			return;
 		modified = false;
@@ -68,6 +76,8 @@ class FileView extends hide.ui.View<{ path : String }> {
 		keys.register("undo", function() undo.undo());
 		keys.register("redo", function() undo.redo());
 		keys.register("save", function() save());
+		keys.register("view.refresh", function() rebuild());
+		keys.register("view.refreshApp", function() untyped chrome.runtime.reload());
 	}
 
 	public function save() {
@@ -150,7 +160,7 @@ class FileView extends hide.ui.View<{ path : String }> {
 	override function syncTitle() {
 		super.syncTitle();
 		if( state.path != null )
-			haxe.Timer.delay(function() container.tab.element.attr("title",getPath()), 100);
+			haxe.Timer.delay(function() if( container.tab != null ) container.tab.element.attr("title",getPath()), 100);
 	}
 
 	override function buildTabMenu() {

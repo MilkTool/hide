@@ -150,12 +150,13 @@ class Terrain extends Object3D {
 	}
 
 	function loadTiles( ctx : Context, height = true, index = true , weight = true ) {
-		var prevWatch = @:privateAccess hxd.res.Image.ENABLE_AUTO_WATCH;
-		@:privateAccess hxd.res.Image.ENABLE_AUTO_WATCH = false;
 		var resDir = ctx.shared.loadDir(name);
 
 		if( resDir == null )
 			return;
+
+		var prevWatch = @:privateAccess hxd.res.Image.ENABLE_AUTO_WATCH;
+		@:privateAccess hxd.res.Image.ENABLE_AUTO_WATCH = false;
 
 		// Avoid texture alloc for unpacking
 		var tmpPackedWeightTexture = new h3d.mat.Texture(terrain.weightMapResolution.x, terrain.weightMapResolution.y, [Target]);
@@ -297,7 +298,8 @@ class Terrain extends Object3D {
 				surface.angle = surfaceProps.angle;
 				surface.tilling = surfaceProps.tilling;
 				surface.minHeight = surfaceProps.minHeight;
-				onEnd();
+				if( onEnd != null )
+					onEnd();
 			}
 			albedo.waitLoad(wait);
 			normal.waitLoad(wait);
@@ -350,6 +352,7 @@ class Terrain extends Object3D {
 			for( s in terrain.surfaces )
 				s.tilling /= tileSizeX;
 			terrain.updateSurfaceParams();
+			/* // Disable auto-upgrade for now
 			#if editor
 			// Need to create a terrain with the new params before saving
 			terrain.weightMapResolution = new h2d.col.IPoint(Math.round(tileSizeX * weightMapPixelPerMeter), Math.round(tileSizeY * weightMapPixelPerMeter));
@@ -365,6 +368,7 @@ class Terrain extends Object3D {
 			@:privateAccess shared.scene.editor.view.save();
 			trace("Terrain : " + name +  " is now up to date.");
 			#end
+			*/
 		}
 	}
 
@@ -528,7 +532,7 @@ class Terrain extends Object3D {
 		else
 			terrain.weightMapResolution = new h2d.col.IPoint(Math.round(tileSizeX * weightMapPixelPerMeter), Math.round(tileSizeY * weightMapPixelPerMeter));
 
-		terrain.parallaxAmount = parallaxAmount / 10;
+		terrain.parallaxAmount = parallaxAmount;
 		terrain.parallaxMinStep = parallaxMinStep;
 		terrain.parallaxMaxStep = parallaxMaxStep;
 		terrain.heightBlendStrength = heightBlendStrength;
@@ -552,7 +556,7 @@ class Terrain extends Object3D {
 		super.updateInstance(ctx, null);
 
 		#if editor
-		terrain.parallaxAmount = parallaxAmount / 10.0;
+		terrain.parallaxAmount = parallaxAmount;
 		terrain.parallaxMinStep = parallaxMinStep;
 		terrain.parallaxMaxStep = parallaxMaxStep;
 		terrain.heightBlendStrength = heightBlendStrength;
@@ -623,11 +627,15 @@ class Terrain extends Object3D {
 		props.find(".apply").click(function(_) {
 			tileSizeX = @:privateAccess Lambda.find(ctx.properties.fields, f->f.fname=="tileSizeSetX").range.value;
 			tileSizeY = @:privateAccess Lambda.find(ctx.properties.fields, f->f.fname=="tileSizeSetY").range.value;
-			weightMapPixelPerMeter = Std.int(@:privateAccess Lambda.find(ctx.properties.fields, f->f.fname=="weightMapPixelPerMeter").range.value);
+			weightMapPixelPerMeter = @:privateAccess Lambda.find(ctx.properties.fields, f->f.fname=="weightMapPixelPerMeter").range.value;
 			vertexPerMeter = @:privateAccess Lambda.find(ctx.properties.fields, f->f.fname=="vertexPerMeter").range.value;
 			terrain.weightMapResolution = new h2d.col.IPoint(Math.round(tileSizeX * weightMapPixelPerMeter), Math.round(tileSizeY * weightMapPixelPerMeter));
+			terrain.weightMapResolution.x = Std.int(hxd.Math.max(1, terrain.weightMapResolution.x));
+			terrain.weightMapResolution.y = Std.int(hxd.Math.max(1, terrain.weightMapResolution.y));
 			terrain.tileSize = new h2d.col.Point(tileSizeX, tileSizeY);
 			terrain.cellCount = new h2d.col.IPoint(Math.ceil(tileSizeX * vertexPerMeter), Math.ceil(tileSizeY * vertexPerMeter) );
+			terrain.cellCount.x = Std.int(hxd.Math.max(1, terrain.cellCount.x));
+			terrain.cellCount.y = Std.int(hxd.Math.max(1, terrain.cellCount.y));
 			terrain.cellSize = new h2d.col.Point(tileSizeX / terrain.cellCount.x, tileSizeY / terrain.cellCount.y );
 			terrain.heightMapResolution = new h2d.col.IPoint(terrain.cellCount.x + 1, terrain.cellCount.y + 1);
 			terrain.refreshAllGrids();

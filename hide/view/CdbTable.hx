@@ -6,7 +6,8 @@ class CdbTable extends hide.ui.View<{}> {
 	var editor : hide.comp.cdb.Editor;
 	var currentSheet : String;
 	var tabCache : String;
-	var view : hide.comp.cdb.ConfigView;
+	var tabs : hide.comp.Tabs;
+	var view : cdb.DiffFile.ConfigView;
 
 	public function new( ?state ) {
 		super(state);
@@ -21,6 +22,16 @@ class CdbTable extends hide.ui.View<{}> {
 		undo = editor.undo;
 		currentSheet = this.config.get("cdb.currentSheet");
 		view = cast this.config.get("cdb.view");
+	}
+
+	public function goto( s : cdb.Sheet, line : Int, column : Int ) {
+		var sheets = [for( s in getSheets() ) s.name];
+		var index = sheets.indexOf(s.name);
+		if( index < 0 ) return;
+		tabs.currentTab = tabContents[index].parent();
+		editor.cursor.setDefault(line, column);
+		editor.focus();
+		haxe.Timer.delay(() -> editor.cursor.update(), 1); // scroll
 	}
 
 	function syncTabs() {
@@ -45,13 +56,9 @@ class CdbTable extends hide.ui.View<{}> {
 	function setEditor(index:Int) {
 		var sheets = getSheets();
 		editor.show(sheets[index],tabContents[index]);
-		haxe.Timer.delay(function() {
-			// delay
-			editor.focus();
-			editor.onFocus = activate;
-		},0);
 		currentSheet = editor.getCurrentSheet();
 		ide.currentConfig.set("cdb.currentSheet", sheets[index].name);
+		haxe.Timer.delay(editor.focus,1);
 	}
 
 	override function onDisplay() {
@@ -66,7 +73,8 @@ class CdbTable extends hide.ui.View<{}> {
 			return;
 		}
 		element.addClass("cdb-view");
-		var tabs = new hide.comp.Tabs(element, true);
+		element.toggleClass("cdb-diff", @:privateAccess ide.databaseDiff != null);
+		tabs = new hide.comp.Tabs(element, true);
 		tabCache = getTabCache();
 		tabContents = [];
 		for( sheet in sheets ) {

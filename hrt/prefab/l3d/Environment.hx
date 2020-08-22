@@ -132,7 +132,7 @@ class Environment extends Object3D {
 
 		if( bakedDiffSize != diffSize || bakedSpecSize != specSize || bakedIgnoredSpecLevels != ignoredSpecLevels || bakedSampleBits != sampleBits || bakedThreshold != threshold || bakedScale != scale )
 			return false;
-		
+
 		var lutSize = hxd.Pixels.calcStride(env.lut.width, env.lut.format) * env.lut.height;
 		if( curPos + lutSize > bytes.length ) return false;
 		var lutBytes = bytes.sub(curPos, lutSize);
@@ -176,10 +176,7 @@ class Environment extends Object3D {
 	}
 
 	override function makeInstance( ctx : Context ) : Context {
-		ctx = ctx.clone(this);
-		var obj = new h3d.scene.Object(ctx.local3d);
-		ctx.local3d = obj;
-		ctx.local3d.name = name;
+		super.makeInstance(ctx);
 		updateInstance(ctx);
 		return ctx;
 	}
@@ -190,6 +187,16 @@ class Environment extends Object3D {
 		var sourceMap = sourceMapPath != null ? ctx.loadTexture(sourceMapPath) : null;
 		if( sourceMap == null )
 			return;
+
+		#if editor
+		if( sourceMap.flags.has(Loading) ) {
+			haxe.Timer.delay(function() {
+				ctx.setCurrent();
+				updateInstance(ctx,propName);
+			},100);
+			return;
+		}
+		#end
 
 		var needCompute = false;
 
@@ -245,7 +252,7 @@ class Environment extends Object3D {
 
 	public function applyToRenderer( r : h3d.scene.Renderer) {
 		var r = Std.downcast(r, h3d.scene.pbr.Renderer);
-		if( r != null ) 
+		if( r != null )
 			r.env = env;
 	}
 

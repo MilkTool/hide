@@ -9,22 +9,25 @@ class Instance extends Object3D {
 		props = {};
 	}
 
+	#if editor
 	override function makeInstance(ctx:Context):Context {
-		#if editor
 		var ctx = super.makeInstance(ctx);
-		var kind = getCdbKind(this);
-		if(kind == null || kind.idx == null)
-			return ctx;
+		var kind = getRefSheet(this);
+		var unknown = kind == null || kind.idx == null;
 
-		var modelPath = findModelPath(kind.sheet, kind.idx.obj);
+		var modelPath = unknown ? null : findModelPath(kind.sheet, kind.idx.obj);
 		if(modelPath != null) {
 			try {
 				if(hrt.prefab.Library.getPrefabType(modelPath) != null) {
 					var ref = ctx.shared.loadPrefab(modelPath);
 					var ctx = ctx.clone(this);
 					ctx.isRef = true;
-					if(ref != null)
+					if(ref != null) {
+						var prev = ctx.shared.root3d;
+						ctx.shared.root3d = ctx.local3d; // allows Context.locateObject to work (constraints)
 						ref.make(ctx);
+						ctx.shared.root3d = prev;
+					}
 				}
 				else {
 					var obj = ctx.loadModel(modelPath);
@@ -36,19 +39,78 @@ class Instance extends Object3D {
 			}
 		}
 		else {
-			var tile = findTile(kind.sheet, kind.idx.obj).center();
+			var tile = unknown ? getDefaultTile().center() : findTile(kind.sheet, kind.idx.obj).center();
 			var objFollow = new h2d.ObjectFollower(ctx.local3d, ctx.shared.root2d);
 			objFollow.followVisibility = true;
 			var bmp = new h2d.Bitmap(tile, objFollow);
 			ctx.local2d = objFollow;
-			var mesh = new h3d.scene.Mesh(h3d.prim.Cube.defaultUnitCube(), ctx.local3d);
-			mesh.scale(0.5);
-			var mat = mesh.material;
-			mat.color.setColor(0xff00ff);
-			mat.shadows = false;
 		}
-		#end
+		addRanges(ctx, true);
 		return ctx;
+	}
+
+	public function addRanges( ctx : Context, init = false ) {
+		if( !init ) {
+			for( r in ctx.shared.getObjects(this,h3d.scene.Object) )
+				if( r.name == "RANGE")
+					r.remove();
+		}
+		// add ranges
+		var shared = Std.downcast(ctx.shared, hide.prefab.ContextShared);
+		if( shared != null && shared.editorDisplay ) {
+			var sheet = getCdbType();
+			if( sheet != null ) {
+				var ranges = Reflect.field(shared.scene.config.get("sceneeditor.ranges"), sheet);
+				if( ranges != null ) {
+					for( key in Reflect.fields(ranges) ) {
+						var color = Std.parseInt(Reflect.field(ranges,key));
+						var value : Dynamic = props;
+						for( p in key.split(".") )
+							value = Reflect.field(value, p);
+						if( value != null ) {
+							var mesh = new h3d.scene.Mesh(h3d.prim.Cylinder.defaultUnitCylinder(128), ctx.local3d);
+							mesh.name = "RANGE";
+							mesh.ignoreCollide = true;
+							mesh.ignoreBounds = true;
+							mesh.material.mainPass.culling = None;
+							mesh.material.name = "RANGE";
+							mesh.setScale(value * 2);
+							mesh.scaleZ = 0.1;
+							mesh.material.color.setColor(color|0xFF000000);
+							mesh.material.mainPass.enableLights = false;
+							mesh.material.shadows = false;
+							mesh.material.mainPass.setPassName("overlay");
+						}
+					}
+				}
+			}
+		}
+	}
+
+	override function setSelected(ctx:Context, b:Bool):Bool {
+		var b = super.setSelected(ctx, b);
+		for( m in ctx.shared.getMaterials(this) )
+			if( m.name == "RANGE" )
+				m.removePass(m.getPass("highlight"));
+		return b;
+	}
+
+	override function makeInteractive(ctx:Context):hxd.SceneEvents.Interactive {
+		var int = super.makeInteractive(ctx);
+		if( int == null ) {
+			// no meshes ? do we have an icon instead...
+			var follow = Std.downcast(ctx.local2d, h2d.ObjectFollower);
+			if( follow != null ) {
+				var bmp = Std.downcast(follow.getChildAt(0), h2d.Bitmap);
+				if( bmp != null ) {
+					var i = new h2d.Interactive(bmp.tile.width, bmp.tile.height, bmp);
+					i.x = bmp.tile.dx;
+					i.y = bmp.tile.dy;
+					int = i;
+				}
+			}
+		}
+		return int;
 	}
 
 	override function removeInstance(ctx:Context):Bool {
@@ -59,30 +121,48 @@ class Instance extends Object3D {
 		return true;
 	}
 
-	public static function getCdbKind(p: Prefab) {
-		if(p.props == null)
+	// ---- statics
+
+	public static function getRefSheet(p: Prefab) {
+		var name = p.getCdbType();
+		if( name == null )
 			return null;
-		var sheet = p.getCdbModel();
+		var sheet = hide.comp.cdb.DataFiles.resolveType(name);
 		if( sheet == null )
 			return null;
-		var refCol = findRefColumn(sheet);
-		if(refCol == null)
+		var refCols = findRefColumns(sheet);
+		if(refCols == null)
 			return null;
-		var refId = Reflect.getProperty(p.props, refCol.col.name);
+		var refId : Dynamic = p.props;
+		for( c in refCols.cols )
+			refId = Reflect.field(refId, c.name);
 		if(refId == null)
 			return null;
-		var refSheet = sheet.base.getSheet(refCol.sheet);
+		var refSheet = sheet.base.getSheet(refCols.sheet);
 		if(refSheet == null)
 			return null;
 		return {sheet: refSheet, idx: refSheet.index.get(refId)};
 	}
 
-	public static function findRefColumn(sheet : cdb.Sheet) {
+	public static function findRefColumns(sheet : cdb.Sheet) {
 		for(col in sheet.columns) {
 			switch(col.type) {
 				case TRef(sheet):
-					return {col: col, sheet: sheet};
+					return {cols: [col], sheet: sheet};
 				default:
+			}
+		}
+		for(col in sheet.columns) {
+			switch(col.type) {
+			case TProperties:
+				var sub = sheet.getSub(col);
+				for( col2 in sub.columns )
+					switch( col2.type ) {
+					case TRef(sheet2):
+						return {cols: [col,col2], sheet: sheet2};
+					default:
+					}
+			default:
 			}
 		}
 		return null;
@@ -123,14 +203,6 @@ class Instance extends Object3D {
 		return path;
 	}
 
-	#if editor
-
-	override function edit( ctx : EditContext ) {
-		super.edit(ctx);
-		var sheet = getCdbModel();
-		if( sheet == null ) return;
-	}
-
 	override function getHideProps() : HideProps {
 		return { icon : "circle", name : "Instance" };
 	}
@@ -153,7 +225,17 @@ class Instance extends Object3D {
 			if(tile != null)
 				return makeTile(tile);
 		}
-		return h2d.Tile.fromColor(0xFF00FF, 16, 16, 0.8).sub(0, 0, 8, 8);
+		return getDefaultTile();
+	}
+
+	static function getDefaultTile() : h2d.Tile {
+		var engine = h3d.Engine.getCurrent();
+		var t = @:privateAccess engine.resCache.get(Instance);
+		if( t == null ) {
+			t = hxd.res.Any.fromBytes("",sys.io.File.getBytes(hide.Ide.inst.getPath("${HIDE}/res/icons/unknown.png"))).toTile();
+			@:privateAccess engine.resCache.set(Instance, t);
+		}
+		return t.clone();
 	}
 
 	static function makeTile(p:cdb.Types.TilePos) : h2d.Tile {

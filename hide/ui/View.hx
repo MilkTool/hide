@@ -24,6 +24,7 @@ class View<T> extends hide.comp.Component {
 
 	var contentWidth(get,never) : Int;
 	var contentHeight(get,never) : Int;
+	var needRebuild : Bool;
 
 	public function new(state:T) {
 		super(null,null);
@@ -119,10 +120,6 @@ class View<T> extends hide.comp.Component {
 			onResize();
 		});
 		container.on("destroy",function(e) {
-			if( !onBeforeClose() ) {
-				e.preventDefault();
-				return;
-			}
 			destroy();
 		});
 		container.on("show", function(_) {
@@ -135,6 +132,9 @@ class View<T> extends hide.comp.Component {
 		});
 
 		container.on("tab", function(e) {
+			container.tab.onClose = function() {
+				return onBeforeClose();
+			};
 			container.tab.element.contextmenu(function(e) {
 				var menu = buildTabMenu();
 				if( menu.length > 0 ) new hide.comp.ContextMenu(menu);
@@ -146,8 +146,23 @@ class View<T> extends hide.comp.Component {
 		element = cont.getElement();
 	}
 
-	public function rebuild() {
-		if( container == null ) return;
+	public final function rebuild() {
+		function checkRebuild() {
+			if( container == null || !needRebuild ) return;
+			if( !isActive() ) {
+				haxe.Timer.delay(checkRebuild,200);
+				return;
+			}
+			needRebuild = false;
+			onRebuild();
+		}
+		if( !needRebuild ) {
+			needRebuild = true;
+			checkRebuild();
+		}
+	}
+
+	function onRebuild() {
 		for( w in watches.copy() )
 			if( !w.keep ) {
 				ide.fileWatcher.unregister(w.path, w.callb);
@@ -169,6 +184,10 @@ class View<T> extends hide.comp.Component {
 	public function onActivate() {
 	}
 
+	public function isActive() {
+		return container != null && !container.isHidden;
+	}
+
 	public function onDragDrop(items : Array<String>, isDrop : Bool) {
 		return false;
 	}
@@ -188,7 +207,7 @@ class View<T> extends hide.comp.Component {
 		}
 	}
 
-	public function saveState() {
+	function saveState() {
 		container.setState(state);
 	}
 

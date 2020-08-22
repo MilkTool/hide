@@ -23,6 +23,8 @@ class Ide {
 	public var isCDB = false;
 	public var isDebugger = false;
 
+	public var gamePad(default,null) : hxd.Pad;
+
 	var databaseFile : String;
 	var databaseDiff : String;
 	var pakFile : hxd.fmt.pak.FileSystem;
@@ -56,10 +58,11 @@ class Ide {
 	static var firstInit = true;
 
 	function new() {
+		initPad();
 		isCDB = Sys.getEnv("HIDE_START_CDB") == "1" || nw.App.manifest.name == "CDB";
 		isDebugger = Sys.getEnv("HIDE_DEBUG") == "1";
 		function wait() {
-			if( monaco.Editor == null ) {
+			if( monaco.ScriptEditor == null ) {
 				haxe.Timer.delay(wait, 10);
 				return;
 			}
@@ -68,11 +71,20 @@ class Ide {
 		wait();
 	}
 
+	function initPad() {
+		gamePad = hxd.Pad.createDummy();
+		hxd.Pad.wait((p) -> gamePad = p);
+	}
+
 	function startup() {
 		inst = this;
 		window = nw.Window.get();
 		var cwd = Sys.getCwd();
 		config = Config.loadForProject(cwd, cwd+"/res");
+		var current = ideConfig.currentProject;
+		if( StringTools.endsWith(cwd,"package.nw") && sys.FileSystem.exists(cwd.substr(0,-10)+"res") )
+			cwd = cwd.substr(0,-11);
+		if( current == "" ) cwd;
 
 		var args = js.Browser.document.URL.split("?")[1];
 		if( args != null ) {
@@ -109,13 +121,12 @@ class Ide {
 
 		fileWatcher = new hide.tools.FileWatcher();
 
-		if( !sys.FileSystem.exists(ideConfig.currentProject) || !sys.FileSystem.isDirectory(ideConfig.currentProject) ) {
-			js.Browser.alert(ideConfig.currentProject+" no longer exists");
-			ideConfig.currentProject = cwd;
-			config.global.save();
+		if( !sys.FileSystem.exists(current) || !sys.FileSystem.isDirectory(current) ) {
+			if( current != "" ) js.Browser.alert(current+" no longer exists");
+			current = cwd;
 		}
 
-		setProject(ideConfig.currentProject);
+		setProject(current);
 		window.window.document.addEventListener("mousedown", function(e) {
 			mouseX = e.x;
 			mouseY = e.y;
@@ -308,11 +319,18 @@ class Ide {
 
 		layout = new golden.Layout(config);
 
+		var initViews = [];
+		function initView(view:hide.ui.View<Dynamic>) {
+			if( isDebugger ) view.rebuild() else try view.rebuild() catch( e : Dynamic ) error(view+":"+e);
+		}
 		for( vcl in hide.ui.View.viewClasses )
 			layout.registerComponent(vcl.name,function(cont,state) {
 				var view = Type.createInstance(vcl.cl,[state]);
 				view.setContainer(cont);
-				try view.rebuild() catch( e : Dynamic ) error(vcl.name+":"+e);
+				if( initializing )
+					initViews.push(view);
+				else
+					initView(view);
 			});
 
 		layout.init();
@@ -345,6 +363,9 @@ class Ide {
 				}
 			}
 			initializing = false;
+			for( v in initViews )
+				initView(v);
+			initViews = null;
 			if( subView == null && views.length == 0 ) {
 				if( isCDB )
 					open("hide.view.CdbTable",{}, function(v) v.fullScreen = true);
@@ -367,6 +388,8 @@ class Ide {
 	}
 
 	function mainLoop() {
+		hxd.Timer.update();
+		@:privateAccess hxd.Pad.syncPads();
 		for( f in updates )
 			f();
 	}
@@ -457,6 +480,8 @@ class Ide {
 	}
 
 	public function getPath( relPath : String ) {
+		if( relPath == null )
+			return null;
 		relPath = relPath.split("${HIDE}").join(appPath);
 		if( haxe.io.Path.isAbsolute(relPath) )
 			return relPath;
@@ -483,13 +508,14 @@ class Ide {
 			if( ideConfig.recentProjects.length > 10 ) ideConfig.recentProjects.pop();
 			config.global.save();
 		}
-		window.title = (isCDB ? "CastleDB" : "HIDE") + " - " + dir;
 		try {
 			config = Config.loadForProject(projectDir, resourceDir);
 		} catch( e : Dynamic ) {
 			js.Browser.alert(e);
 			return;
 		}
+		var title = config.current.get("hide.windowTitle");
+		window.title = title != null ? title : ((isCDB ? "CastleDB" : "HIDE") + " - " + dir);
 		shaderLoader = new hide.tools.ShaderLoader();
 		typesCache = new hide.tools.TypesCache();
 
@@ -548,6 +574,8 @@ class Ide {
 			}
 
 			var render = renderers[0];
+			if( projectConfig.renderer == null )
+				projectConfig.renderer = config.current.get("defaultRenderer");
 			for( r in renderers )
 				if( r.name == projectConfig.renderer ) {
 					render = r;
@@ -662,7 +690,9 @@ class Ide {
 			return; // cancel load
 		database = new cdb.Database();
 		if( !exists ) return;
-		try {
+		if( isDebugger ) {
+			database.load(getFile(databaseFile).toString());
+		} else try {
 			database.load(getFile(databaseFile).toString());
 		} catch( e : Dynamic ) {
 			error(e);
@@ -679,19 +709,21 @@ class Ide {
 	}
 
 	public function saveDatabase() {
-		if( databaseDiff != null ) {
-			fileWatcher.ignoreNextChange(databaseDiff);
-			sys.io.File.saveContent(getPath(databaseDiff), toJSON(new cdb.DiffFile().make(originDataBase,database)));
-		} else {
-			if( !sys.FileSystem.exists(getPath(databaseFile)) && fileExists(databaseFile) ) {
-				// was loaded from pak, cancel changes
-				loadDatabase();
-				hide.comp.cdb.Editor.refreshAll();
-				return;
+		hide.comp.cdb.DataFiles.save(function() {
+			if( databaseDiff != null ) {
+				fileWatcher.ignoreNextChange(databaseDiff);
+				sys.io.File.saveContent(getPath(databaseDiff), toJSON(new cdb.DiffFile().make(originDataBase,database)));
+			} else {
+				if( !sys.FileSystem.exists(getPath(databaseFile)) && fileExists(databaseFile) ) {
+					// was loaded from pak, cancel changes
+					loadDatabase();
+					hide.comp.cdb.Editor.refreshAll();
+					return;
+				}
+				fileWatcher.ignoreNextChange(databaseFile);
+				sys.io.File.saveContent(getPath(databaseFile), database.save());
 			}
-			fileWatcher.ignoreNextChange(databaseFile);
-			sys.io.File.saveContent(getPath(databaseFile), database.save());
-		}
+		});
 	}
 
 	public function createDBSheet( ?index : Int ) {
@@ -714,8 +746,9 @@ class Ide {
 		return path;
 	}
 
+	public static var IMG_EXTS = ["jpg", "jpeg", "gif", "png", "raw", "dds"];
 	public function chooseImage( onSelect ) {
-		chooseFile(["png","jpeg","jpg","gif"], onSelect);
+		chooseFile(IMG_EXTS, onSelect);
 	}
 
 	public function chooseFiles( exts : Array<String>, onSelect : Array<String> -> Void ) {
@@ -832,7 +865,8 @@ class Ide {
 
 		if( subView != null ) return;
 
-		var menu = new Element(new Element("#mainmenu").get(0).outerHTML);
+		var menuHTML = "<content>"+new Element("#mainmenu").html() + config.project.get("menu.extra")+"</content>";
+		var menu = new Element(menuHTML);
 
 		// project
 		if( ideConfig.recentProjects.length > 0 )
@@ -921,19 +955,15 @@ class Ide {
 			hide.comp.cdb.Editor.refreshAll();
 			initMenu();
 			for( v in getViews(hide.view.CdbTable) )
-				v.syncTitle();
+				v.rebuild();
 		}
 		db.find(".dbCreateDiff").click(function(_) {
-			var name = ask("File name","data");
-			if( name == null ) return;
-			if( name.indexOf(".") < 0 ) name += ".diff";
-			var path = getPath(name);
-			if( sys.FileSystem.exists(path) ) {
-				error("File already exists "+path);
-				return;
-			}
-			sys.io.File.saveContent(path,"{}");
-			setDiff(name);
+			chooseFileSave("cdb.diff", function(name) {
+				if( name == null ) return;
+				if( name.indexOf(".") < 0 ) name += ".diff";
+				sys.io.File.saveContent(getPath(name),"{}");
+				setDiff(name);
+			});
 		});
 		db.find(".dbLoadDiff").click(function(_) {
 			chooseFile(["diff"], function(f) {
@@ -1047,37 +1077,37 @@ class Ide {
 			}
 			target.config.isClosable = false;
 		}
-		if( onCreate != null )
-			target.on("componentCreated", function(c) {
-				target.off("componentCreated");
-				onCreate(untyped c.origin.__view);
-			});
+		var needResize = options.width != null;
+		target.on("componentCreated", function(c) {
+			target.off("componentCreated");
+			var view : hide.ui.View<Dynamic> = untyped c.origin.__view;
+			if( onCreate != null ) onCreate(view);
+			if( needResize ) {
+				// when opening restricted size after free size
+				haxe.Timer.delay(function() {
+					view.container.setSize(options.width, view.container.height);
+				},0);
+			} else {
+				// when opening free size after restricted size
+				var v0 = views[0];
+				if( views.length == 2 && views[1] == view && v0.defaultOptions.width != null )
+					haxe.Timer.delay(function() {
+						v0.container.setSize(v0.defaultOptions.width, v0.container.height);
+					},0);
+			}
+		});
 		var config : golden.Config.ItemConfig = {
 			type : Component,
 			componentName : component,
 			componentState : state
 		};
 
-		// not working... see https://github.com/deepstreamIO/golden-layout/issues/311
-		if( options.width != null )
-			config.width = Std.int(options.width * 100 / target.element.width());
-
 		if( options.position == Left ) index = 0;
-
-		var needToResizeResourcePanel = false;
-
-		if (views.length == 1) {
-			needToResizeResourcePanel = true;
-		}
 
 		if( index == null )
 			target.addChild(config);
 		else
 			target.addChild(config, index);
-
-		if (needToResizeResourcePanel) {
-			views[0].container.setSize(views[0].defaultOptions.width, views[0].container.height);
-		}
 	}
 
 	public function message( text : String ) {

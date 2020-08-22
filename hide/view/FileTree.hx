@@ -14,7 +14,6 @@ typedef ExtensionDesc = {
 class FileTree extends FileView {
 
 	var tree : hide.comp.IconTree<String>;
-	var lastOpen : hide.ui.View<Dynamic>;
 	var ignorePatterns : Array<EReg> = [];
 
 	public function new(state) {
@@ -99,29 +98,16 @@ class FileTree extends FileView {
 
 		tree.onRename = onRename;
 
-		// prevent dummy mouseLeft from breaking our quickOpen feature
-		var mouseLeft = false;
-		var leftCount = 0;
-		element.on("mouseenter", function(_) {
-			mouseLeft = false;
-		});
-		element.on("mouseleave", function(_) {
-			mouseLeft = true;
-			leftCount++;
-			var k = leftCount;
-			if( lastOpen != null )
-				haxe.Timer.delay(function() {
-					if( !mouseLeft || leftCount != k ) return;
-					lastOpen = null;
-				},1000);
-		});
 		element.contextmenu(function(e) {
 			var current = tree.getCurrentOver();
 			if( current != null )
 				tree.setSelection([current]);
 			e.preventDefault();
-			var newMenu = [for( e in EXTENSIONS ) if( e.options.createNew != null ) { label : e.options.createNew, click : createNew.bind(current, e) }];
-			newMenu.unshift({ label : "Directory", click : createNew.bind(current, { options : { createNew : "Directory" }, extensions : null, component : null }) });
+			var allowedNew : Array<String> = config.get("filetree.allowednew");
+			function allowed( ext : String ) return allowedNew.indexOf(ext) >= 0 || allowedNew.indexOf("*") >= 0;
+			var newMenu = [for( e in EXTENSIONS ) if( e.options.createNew != null && Lambda.exists(e.extensions, allowed) ) { label : e.options.createNew, click : createNew.bind(current, e) }];
+			if( allowed("dir") )
+				newMenu.unshift({ label : "Directory", click : createNew.bind(current, { options : { createNew : "Directory" }, extensions : null, component : null }) });
 			new hide.comp.ContextMenu([
 				{ label : "New..", menu:newMenu },
 				{ label : "Explore", enabled : current != null, click : function() { onExploreFile(current); } },
@@ -270,12 +256,7 @@ class FileTree extends FileView {
 		var ext = getExtension(fullPath);
 		if( ext == null )
 			return false;
-		var prev = lastOpen;
-		lastOpen = null;
-		ide.openFile(fullPath, function(c) {
-			if( prev != null ) prev.close();
-			lastOpen = c;
-		});
+		ide.openFile(fullPath);
 		return true;
 	}
 

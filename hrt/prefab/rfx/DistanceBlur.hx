@@ -1,6 +1,6 @@
 package hrt.prefab.rfx;
 
-class DistanceBlurShader extends h3d.shader.ScreenShader {
+class DistanceBlurShader extends PbrShader {
 
 	static var SRC = {
 
@@ -16,24 +16,9 @@ class DistanceBlurShader extends h3d.shader.ScreenShader {
 
 		@param var blurredTexture : Sampler2D;
 
-		@ignore @param var depthTexture : Channel;
-		@ignore @param var cameraPos : Vec3;
-		@ignore @param var cameraInverseViewProj : Mat4;
-
-		function getPosition( uv: Vec2 ) : Vec3 {
-			var depth = depthTexture.get(uv);
-			var uv2 = uvToScreen(calculatedUV);
-			var isSky = 1 - ceil(depth);
-			depth = mix(depth, 1, isSky);
-			var temp = vec4(uv2, depth, 1) * cameraInverseViewProj;
-			var originWS = temp.xyz / temp.w;
-			return originWS;
-		}
-
 		function fragment() {
-			var calculatedUV = input.uv;
-			var origin = getPosition(calculatedUV);
-			var distance = (origin - cameraPos).length();
+			var origin = getPosition();
+			var distance = (origin - camera.position).length();
 
 			if( distance > nearEndDistance && distance < farStartDistance )
 				discard;
@@ -90,11 +75,10 @@ class DistanceBlur extends RendererFX {
 		blurPass.pass.setBlendMode(Alpha);
 	}
 
-	override function apply(r:h3d.scene.Renderer, step:h3d.impl.RendererFX.Step) {
+	override function end(r:h3d.scene.Renderer, step:h3d.impl.RendererFX.Step) {
 		var p : DistanceBlurProps = props;
 		if( step == AfterTonemapping ) {
 			var ctx = r.ctx;
-			var depth : hxsl.ChannelTexture = ctx.getGlobal("depthMap");
 			blurPass.shader.nearStartDistance = p.nearStartDistance;
 			blurPass.shader.nearEndDistance = p.nearEndDistance;
 			blurPass.shader.nearStartIntensity = p.nearStartIntensity;
@@ -105,16 +89,13 @@ class DistanceBlur extends RendererFX {
 			blurPass.shader.farEndIntensity = p.farEndIntensity;
 			var lbrBlurred : h3d.mat.Texture = ctx.getGlobal("ldrBlurred");
 			if( lbrBlurred == null ) {
-				var ldr : h3d.mat.Texture = ctx.getGlobal("ldr");
+				var ldr : h3d.mat.Texture = ctx.getGlobal("ldrMap");
 				lbrBlurred = r.allocTarget("ldrBlurred", false, 0.25, RGBA);
 				r.copy(ldr, lbrBlurred);
 				lbrBlur.apply(ctx, lbrBlurred);
 			}
 			blurPass.shader.blurredTexture = lbrBlurred;
-			blurPass.shader.depthTextureChannel = depth.channel;
-			blurPass.shader.depthTexture = depth.texture;
-			blurPass.shader.cameraPos = ctx.camera.pos;
-			blurPass.shader.cameraInverseViewProj.load(ctx.camera.getInverseViewProj());
+			blurPass.setGlobals(ctx);
 			blurPass.render();
 		}
 	}
