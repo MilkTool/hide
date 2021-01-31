@@ -278,7 +278,7 @@ input[type=checkbox]:checked:after {
 }
 .hide-range input[type=range] {
   display: inline-block;
-  width: 145px;
+  width: 140px;
 }
 .hide-range input[type=range].small {
   width: 123px;
@@ -513,6 +513,16 @@ input[type=checkbox]:checked:after {
 }
 .searchBox i:hover {
   color: #EEE;
+}
+.tree > .searchBox {
+  position: sticky;
+  float: right;
+  top: 0px;
+  right: 0px;
+  width: 130px;
+}
+.tree > .searchBox input {
+  width: 100px;
 }
 /* Properties */
 .hide-properties {

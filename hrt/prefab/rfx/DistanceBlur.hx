@@ -16,23 +16,30 @@ class DistanceBlurShader extends PbrShader {
 
 		@param var blurredTexture : Sampler2D;
 
+		@const var DEBUG : Bool = false;
+
+		var currentPosition : Vec3;
+		var blurAmount : Float;
+
+		function __init__fragment() {{
+			currentPosition = getPosition();
+			var distance = (currentPosition - camera.position).length();
+			blurAmount = 0;
+			if( distance < nearEndDistance ) {
+				var nearIntensityFactor = clamp((distance - nearStartDistance) / (nearEndDistance - nearStartDistance), 0, 1);
+				blurAmount = mix(nearStartIntensity, nearEndIntensity, nearIntensityFactor);
+			}
+			else if( distance > farStartDistance ) {
+				var farIntensityFactor = clamp((distance - farStartDistance) / (farEndDistance - farStartDistance), 0, 1);
+				blurAmount = mix(farStartIntensity, farEndIntensity, farIntensityFactor);
+			}
+		}}
+
 		function fragment() {
-			var origin = getPosition();
-			var distance = (origin - camera.position).length();
-
-			if( distance > nearEndDistance && distance < farStartDistance )
-				discard;
-
-			var nearIntensityFactor = clamp((distance - nearStartDistance) / (nearEndDistance - nearStartDistance), 0, 1);
-			var farIntensityFactor = clamp((distance - farStartDistance) / (farEndDistance - farStartDistance), 0, 1);
-			var nearIntensity = mix(nearStartIntensity, nearEndIntensity, nearIntensityFactor);
-			var farIntensity = mix(farStartIntensity, farEndIntensity, farIntensityFactor);
-			var intensity = max(nearIntensity, farIntensity);
-
-			if( intensity <= 0 ) discard;
-
-			pixelColor = vec4(blurredTexture.get(calculatedUV).rgb, intensity);
+			if( blurAmount <= 0.004 ) discard;
+			pixelColor = DEBUG ? vec4(blurAmount.xxx, 1.0) : vec4(blurredTexture.get(calculatedUV).rgb, blurAmount);
 		}
+
 	};
 
 	public function new() {
@@ -52,12 +59,16 @@ typedef DistanceBlurProps = {
 	var farEndDistance : Float;
 	var farStartIntensity : Float;
 	var farEndIntensity : Float;
+
+	var showDebug : Bool;
+	var blurTextureSize : Float;
+	var blurRange : Int;
 }
 
 class DistanceBlur extends RendererFX {
 
 	var blurPass = new h3d.pass.ScreenFx(new DistanceBlurShader());
-	var lbrBlur = new h3d.pass.Blur(9);
+	var lbrBlur = new h3d.pass.Blur();
 
 	public function new(?parent) {
 		super(parent);
@@ -70,12 +81,16 @@ class DistanceBlur extends RendererFX {
 			farEndDistance : 500,
 			farStartIntensity : 0,
 			farEndIntensity : 1,
+			showDebug : false,
+			blurTextureSize : 0.5,
+			blurRange : 6,
 		} : DistanceBlurProps);
 
 		blurPass.pass.setBlendMode(Alpha);
 	}
 
 	override function end(r:h3d.scene.Renderer, step:h3d.impl.RendererFX.Step) {
+		if( !checkEnabled() ) return;
 		var p : DistanceBlurProps = props;
 		if( step == AfterTonemapping ) {
 			var ctx = r.ctx;
@@ -87,13 +102,14 @@ class DistanceBlur extends RendererFX {
 			blurPass.shader.farEndDistance = p.farEndDistance;
 			blurPass.shader.farStartIntensity = p.farStartIntensity;
 			blurPass.shader.farEndIntensity = p.farEndIntensity;
-			var lbrBlurred : h3d.mat.Texture = ctx.getGlobal("ldrBlurred");
-			if( lbrBlurred == null ) {
-				var ldr : h3d.mat.Texture = ctx.getGlobal("ldrMap");
-				lbrBlurred = r.allocTarget("ldrBlurred", false, 0.25, RGBA);
-				r.copy(ldr, lbrBlurred);
-				lbrBlur.apply(ctx, lbrBlurred);
-			}
+			blurPass.shader.DEBUG = #if editor p.showDebug #else false #end;
+
+			var ldr : h3d.mat.Texture = ctx.getGlobal("ldrMap");
+			var lbrBlurred = r.allocTarget("ldrBlurred", false, p.blurTextureSize, RGBA);
+			r.copy(ldr, lbrBlurred);
+			lbrBlur.radius = p.blurRange;
+			lbrBlur.apply(ctx, lbrBlurred);
+
 			blurPass.shader.blurredTexture = lbrBlurred;
 			blurPass.setGlobals(ctx);
 			blurPass.render();
@@ -115,7 +131,15 @@ class DistanceBlur extends RendererFX {
 					<dt>Start Opacity</dt><dd><input type="range" min="0" max="1" field="farStartIntensity"/></dd>
 					<dt>End Opacity</dt><dd><input type="range" min="0" max="1" field="farEndIntensity"/></dd>
 				</div>
+				<div class="group" name="Blur">
+					<dt>Texture Size</dt><dd><input type="range" min="0" max="1" field="blurTextureSize"/></dd>
+					<dt>Range</dt><dd><input type="range" min="0" max="20" step="2" field="blurRange"/></dd>
+				</div>
+				<div class="group" name="Debug">
+					<dt>Show Debug</dt><dd><input type="checkbox" field="showDebug"/></dd>
+				</div>
 		'),props);
+		super.edit(ctx);
 	}
 	#end
 

@@ -246,12 +246,20 @@
 		td.t_int.zero, td.t_float.zero {
 			color: #888;
 		}
+		td.nan {
+			color : #C44;
+		}
+
+		td.formula {
+			font-style : italic;
+			color : #888;
+		}
 
 		td.t_list, td.t_properties {
 			white-space: nowrap;
 			cursor : pointer;
 			text-overflow: ellipsis;
-			max-width: 900;
+			max-width: 900px;
 			overflow: hidden!important;
 			img {
 				max-height: 32px;
@@ -315,6 +323,10 @@
 			color : #C44;
 		}
 
+		span.minor {
+			color: #666;
+		}
+
 		tr.props {
 			background-color: #111;
 			&> td {
@@ -364,6 +376,7 @@
 					color: white;
 					border : 1px solid black;
 					padding : 5px;
+					z-index : 1;
 				}
 			}
 			.inlineImage {
@@ -446,8 +459,12 @@
 			td.first {
 				width : 120px;
 			}
+			.formula {
+				display: none;
+			}
 			.t_int, .t_float {
 				.disp { display : table-row; }
+				.formula { display: table-row; }
 			}
 			.t_string {
 				.kind { display : table-row; }
@@ -458,14 +475,12 @@
 			.t_custom .custom { display : table-row; }
 			.t_id .scope { display : table-row; }
 			.values, .sheet, .custom, .disp, .kind, .scope { display : none; }
-			#doctog {
+			.doctog {
 				cursor:pointer;
 				color : #888;
 			}
-			.doc.hide {
-				span, textarea {
-					display: none;
-				}
+			.hide {
+				display: none !important;
 			}
 		}
 

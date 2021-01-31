@@ -69,6 +69,11 @@ class Curve extends Prefab {
 			loop = o.loop;
 		if(o.keyMode != null)
 			keyMode = o.keyMode;
+
+		if( keys.length == 0 ) {
+			addKey(0.0, 0.0);
+			addKey(1.0, 1.0);
+		}
 	}
 
 	public override function save() {
@@ -256,15 +261,17 @@ class Curve extends Prefab {
 	#if editor
 	override function edit( ctx : EditContext ) {
 		super.edit(ctx);
-
 		ctx.properties.add(new hide.Element('
-			<div class="group" name="Parameters">
-				<dl>
-					<dt>Loop curve</dt><dd><input type="checkbox" field="loop"/></dd>
-				</dl>
-			</div>'), this, function(pname) {
+		<div class="group" name="Parameters">
+			<dl>
+				<dt>Loop curve</dt><dd><input type="checkbox" field="loop"/></dd>
+			</dl>
+		</div>'), this, function(pname) {
 			ctx.onChange(this, pname);
 		});
+
+		var ce = new hide.comp.CurveEditor(ctx.properties.undo, ctx.properties.element);
+		ce.curve = this;
 	}
 
 	override function getHideProps() : HideProps {
@@ -287,7 +294,9 @@ class Curve extends Prefab {
 		var ret = null;
 		for(c in parent.children) {
 			if(!c.enabled) continue;
-			if(c.name.split(".")[0] != prefix)
+			var idx = c.name.indexOf(".");
+			var curvePrefix = (idx >= 0) ? c.name.substr(0, idx) : c.name;
+			if(curvePrefix != prefix)
 				continue;
 			var curve = c.to(Curve);
 			if(curve == null) continue;

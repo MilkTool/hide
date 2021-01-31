@@ -28,11 +28,31 @@ class Line extends Component {
 			var cell = new Cell(v, this, c);
 			if( c.type == TId && view != null && view.forbid != null && view.forbid.indexOf(cell.value) >= 0 )
 				element.addClass("hidden");
-			v.click(function(e) {
-				table.editor.cursor.clickCell(cell, e.shiftKey);
-				e.stopPropagation();
-			});
 		}
+	}
+
+	public function getGroupID() {
+		var t = table;
+		var line = this;
+		while( t.parent != null ) {
+			line = Std.downcast(t, SubTable).cell.line;
+			t = t.parent;
+		}
+		var seps = t.sheet.separators;
+		var i = seps.length - 1;
+		while( i >= 0 ) {
+			if( seps[i] < line.index ) {
+				var t = t.sheet.props.separatorTitles[i];
+				if( t != null ) return t;
+			}
+			i--;
+		}
+		return null;
+	}
+
+	public function evaluate() {
+		for( c in cells )
+			@:privateAccess c.evaluate();
 	}
 
 	public function hide() {

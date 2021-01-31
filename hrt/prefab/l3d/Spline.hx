@@ -82,17 +82,34 @@ class Spline extends Object3D {
 	#if editor
 	public var editor : hide.prefab.SplineEditor;
 	#end
+	public var wasEdited = false;
 
 	override function save() {
 		var obj : Dynamic = super.save();
 
-		if( points != null && points.length > 0 ) {
-			var parentInv = points[0].parent.getAbsPos().clone();
-			parentInv.initInverse(parentInv);
+		var tmp = new h3d.Matrix();
+		inline function getTransform( o : h3d.scene.Object, m : h3d.Matrix ) : h3d.Matrix {
+			m.identity();
+			@:privateAccess o.qRot.toMatrix(m);
+			m._11 *= o.scaleX;
+			m._12 *= o.scaleX;
+			m._13 *= o.scaleX;
+			m._21 *= o.scaleY;
+			m._22 *= o.scaleY;
+			m._23 *= o.scaleY;
+			m._31 *= o.scaleZ;
+			m._32 *= o.scaleZ;
+			m._33 *= o.scaleZ;
+			m._41 = o.x;
+			m._42 = o.y;
+			m._43 = o.z;
+			return m;
+		}
+
+		if( points != null && points.length > 0 && wasEdited ) {
 			obj.points = [ for(sp in points) {
-								var abs = sp.getAbsPos().clone();
-								abs.multiply(abs, parentInv);
-								[for(f in abs.getFloats()) hxd.Math.fmt(f) ];
+								var m = getTransform(sp, tmp);
+								[for(f in m.getFloats()) hxd.Math.fmt(f) ];
 							} ];
 		}
 		// Clone support
@@ -134,6 +151,7 @@ class Spline extends Object3D {
 	// Generate the splineData from a matrix, can't move the spline after that
 	public function makeFromMatrix( m : h3d.Matrix ) {
 		var tmp = new h3d.Matrix();
+		points = [];
 		for( pd in pointsData ) {
 			var sp = new SplinePoint(0, 0, 0, null);
 			tmp.load(pd);
@@ -142,27 +160,24 @@ class Spline extends Object3D {
 			sp.getAbsPos();
 			points.push(sp);
 		}
-		pointsData = [];
 		computeSplineData();
 	}
 
 	override function makeInstance( ctx : hrt.prefab.Context ) : hrt.prefab.Context {
 		var ctx = ctx.clone(this);
-
 		ctx.local3d = new h3d.scene.Object(ctx.local3d);
 		ctx.local3d.name = name;
 
+		points = [];
 		for( pd in pointsData ) {
 			var sp = new SplinePoint(0, 0, 0, ctx.local3d);
 			sp.setTransform(pd);
 			sp.getAbsPos();
 			points.push(sp);
 		}
-		pointsData = [];
 
-		if( points == null || points.length == 0 ) {
+		if( points.length == 0 )
 			points.push(new SplinePoint(0,0,0, ctx.local3d));
-		}
 
 		updateInstance(ctx);
 		return ctx;
@@ -360,7 +375,7 @@ class Spline extends Object3D {
 	}
 	// p'(t) = (p1 - p0)
 	inline function getLinearBezierTangent( t : Float, p0 : h3d.col.Point, p1 : h3d.col.Point ) : h3d.col.Point {
-		return p1.sub(p0).normalizeFast();
+		return p1.sub(p0).normalized();
 	}
 
 	// Quadratic Interpolation
@@ -370,7 +385,7 @@ class Spline extends Object3D {
 	}
 	// p'(t) = 2 * (1 - t) * (p1 - p0) + 2 * t * (p2 - p1)
 	inline function getQuadraticBezierTangent( t : Float, p0 : h3d.col.Point, p1 : h3d.col.Point, p2 : h3d.col.Point) : h3d.col.Point {
-		return p1.sub(p0).multiply(2 * (1 - t)).add(p2.sub(p1).multiply(2 * t)).normalizeFast();
+		return p1.sub(p0).multiply(2 * (1 - t)).add(p2.sub(p1).multiply(2 * t)).normalized();
 	}
 
 	// Cubic Interpolation
@@ -380,7 +395,7 @@ class Spline extends Object3D {
 	}
 	// p'(t) = 3 * (1 - t)² * (p1 - p0) + 6 * (1 - t) * t * (p2 - p1) + 3 * t² * (p3 - p2)
 	inline function getCubicBezierTangent( t : Float, p0 : h3d.col.Point, p1 : h3d.col.Point, p2 : h3d.col.Point, p3 : h3d.col.Point) : h3d.col.Point {
-		return p1.sub(p0).multiply(3 * (1 - t) * (1 - t)).add(p2.sub(p1).multiply(6 * (1 - t) * t)).add(p3.sub(p2).multiply(3 * t * t)).normalizeFast();
+		return p1.sub(p0).multiply(3 * (1 - t) * (1 - t)).add(p2.sub(p1).multiply(6 * (1 - t) * t)).add(p3.sub(p2).multiply(3 * t * t)).normalized();
 	}
 
 	function generateSplineGraph( ctx : hrt.prefab.Context ) {
@@ -405,13 +420,17 @@ class Spline extends Object3D {
 		lineGraphics.clear();
 		var b = true;
 		for( s in data.samples ) {
-			var localPos = ctx.local3d.globalToLocal(s.pos.toVector());
+			var localPos = ctx.local3d.globalToLocal(s.pos);
 			b ? lineGraphics.moveTo(localPos.x, localPos.y, localPos.z) : lineGraphics.lineTo(localPos.x, localPos.y, localPos.z);
 			b = false;
 		}
 	}
 
 	#if editor
+
+	public function onEdit( b : Bool ) {
+		if( b ) wasEdited = true;
+	}
 
 	override function setSelected( ctx : hrt.prefab.Context , b : Bool ) {
 		super.setSelected(ctx, b);

@@ -12,6 +12,8 @@ class LookAtObject extends h3d.scene.Object {
 	}
 
 	static var tmpMat = new h3d.Matrix();
+	static var tmpVec = new h3d.Vector();
+	static var tmpScale = new h3d.Vector();
 	static var deltaVec = new h3d.Vector();
 	static var lookAtPos = new h3d.Vector();
 	static var lockAxis = new h3d.Vector();
@@ -32,7 +34,7 @@ class LookAtObject extends h3d.scene.Object {
 		}
 
 		super.calcAbsPos();
-		deltaVec.load(lookAtPos.sub(absPos.getPosition()));
+		deltaVec.load(lookAtPos.sub(absPos.getPosition(tmpVec)));
 		if(deltaVec.lengthSq() < 0.001)
 			return;
 
@@ -53,10 +55,10 @@ class LookAtObject extends h3d.scene.Object {
 			var targetOnPlane = h3d.col.Plane.fromNormalPoint(lockAxis.toPoint(), new h3d.col.Point()).project(deltaVec.toPoint()).toVector();
 			targetOnPlane.normalize();
 			var frontAxis = new h3d.Vector(1, 0, 0);
-			var angle = hxd.Math.acos(frontAxis.dot3(targetOnPlane));
+			var angle = hxd.Math.acos(frontAxis.dot(targetOnPlane));
 
 			var cross = frontAxis.cross(deltaVec);
-			if(lockAxis.dot3(cross) < 0)
+			if(lockAxis.dot(cross) < 0)
 				angle = -angle;
 
 			var q = getRotationQuat();
@@ -68,7 +70,7 @@ class LookAtObject extends h3d.scene.Object {
 		else
 		{
 			tmpMat.load(absPos);
-			var scale = tmpMat.getScale();
+			var scale = tmpMat.getScale(tmpScale);
 			qRot.initDirection(deltaVec);
 			qRot.toMatrix(absPos);
 			absPos._11 *= scale.x;

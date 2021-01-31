@@ -10,12 +10,12 @@ class EditContext {
 
 	var updates : Array<Float->Void> = [];
 
-	public var prefabPath : String;
 	public var ide(get,never) : hide.Ide;
 	public var scene : hide.comp.Scene;
 	public var properties : hide.comp.PropsEditor;
 	public var cleanups : Array<Void->Void>;
 	function get_ide() return hide.Ide.inst;
+
 	public function onChange(p : Prefab, propName : String) {
 		var ctx = getContext(p);
 		scene.setCurrent();
@@ -28,12 +28,9 @@ class EditContext {
 				parent = parent.parent;
 			}
 		}
-
-		var refs = rootContext.shared.references.get(p);
-		if(refs != null) {
-			for(ctx in refs)
-				p.updateInstance(ctx, propName);
-		}
+		for( ctx2 in rootContext.shared.getContexts(p) )
+			if( ctx2 != ctx )
+				p.updateInstance(ctx2, propName);
 	}
 
 	public function getCurrentProps( p : Prefab ) : Element {
@@ -51,6 +48,20 @@ class EditContext {
 				updates.remove(f2);
 				break;
 			}
+	}
+
+	public function makeChanges( p : Prefab, f : Void -> Void ) @:privateAccess {
+		var current = p.save();
+		properties.undo.change(Custom(function(b) {
+			var old = p.save();
+			p.load(current);
+			current = old;
+			rebuildProperties();
+			onChange(p, null);
+		}));
+		f();
+		rebuildProperties();
+		onChange(p, null);
 	}
 
 	#end

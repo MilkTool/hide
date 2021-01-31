@@ -8,8 +8,16 @@ class PbrShader extends h3d.shader.ScreenShader {
 		@global var occlusionMap : Channel;
 		@global var hdrMap : Channel;
 		@global var camera : {
+			var view : Mat4;
+			var proj : Mat4;
 			var position : Vec3;
+			var projFlip : Float;
+			var projDiag : Vec3;
+			var viewProj : Mat4;
 			var inverseViewProj : Mat4;
+			var zNear : Float;
+			var zFar : Float;
+			@var var dir : Vec3;
 		};
 		@global var global : {
 			var time : Float;

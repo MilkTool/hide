@@ -93,12 +93,28 @@ class View<T> extends hide.comp.Component {
 		container.setTitle(getTitle());
 	}
 
-	public function processKeyEvent( e : js.jquery.Event ) {
+	function isKeysLocked( e : js.jquery.Event ) {
 		var active = js.Browser.document.activeElement;
-		if( active != null && (active.nodeName == "INPUT" || active.nodeName == "TEXTAREA") ) {
+		if( active == null || e.altKey )
+			return false;
+		if( e.ctrlKey && e.keyCode != "A".code && e.keyCode != "C".code && e.keyCode != "V".code && e.keyCode != "X".code )
+			return false;
+		if( active.nodeName == "TEXTAREA" )
+			return true;
+		if( active.nodeName == "INPUT" ) {
+			var type = (""+active.getAttribute("type")).toLowerCase();
+			if( type == "text" || type == "null" || type == "number" || type == "password" || type == "date" )
+				return true;
+		}
+		return false;
+	}
+
+	public function processKeyEvent( e : js.jquery.Event ) {
+		if( isKeysLocked(e) ) {
 			e.stopPropagation();
 			return true;
 		}
+		var active = js.Browser.document.activeElement;
 		for( el in element.find("[haskeys=true]").add(element).elements() ) {
 			if(el.has(active).length == 0 && el[0] != active)
 				continue;

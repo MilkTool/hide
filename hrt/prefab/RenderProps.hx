@@ -1,5 +1,9 @@
 package hrt.prefab;
 
+class RenderPropsObject extends h3d.scene.Object {
+
+}
+
 class RenderProps extends Prefab {
 
 	var isDefault = false;
@@ -16,6 +20,14 @@ class RenderProps extends Prefab {
 
 	override function save() {
 		return { isDefault : isDefault };
+	}
+
+	override function makeInstance(ctx:Context):Context {
+		ctx = ctx.clone(this);
+		ctx.local3d = new RenderPropsObject(ctx.local3d);
+		ctx.local3d.name = name;
+		updateInstance(ctx);
+		return ctx;
 	}
 
 	public function getProps(renderer: h3d.scene.Renderer) {
@@ -67,7 +79,7 @@ class RenderProps extends Prefab {
 		for( s in children ) {
 			var fx = Std.downcast(s, hrt.prefab.rfx.RendererFX);
 			if( fx != null )
-				renderer.effects.push(fx);
+				renderer.effects.push((fx:h3d.impl.RendererFX));
 			var env = Std.downcast(s, hrt.prefab.l3d.Environment);
 			if( env != null )
 				env.applyToRenderer(renderer);
@@ -99,7 +111,11 @@ class RenderProps extends Prefab {
 	}
 
 	override function getHideProps() : HideProps {
-		return { icon : "sun-o", name : "RenderProps", allowChildren : function(t) return Library.isOfType(t,hrt.prefab.rfx.RendererFX) };
+		return { icon : "sun-o", name : "RenderProps", allowChildren : function(t) {
+			return Library.isOfType(t,hrt.prefab.rfx.RendererFX)
+				|| Library.isOfType(t,Light)
+				|| Library.isOfType(t,hrt.prefab.l3d.Environment);
+		}};
 	}
 
 	#end

@@ -87,7 +87,7 @@ class MovablePoint {
 		}
 		getText(localPosText).visible = showDebug;
 		getText(worldPosText).visible = showDebug;
-		var pointWorldPos = new h3d.Vector(point.x, point.y, 0.);
+		var pointWorldPos = new h3d.col.Point(point.x, point.y, 0.);
 		ctx.local3d.localToGlobal(pointWorldPos);
 		getText(localPosText).text = "Local : " + untyped point.x.toFixed(3) + " / " + untyped point.y.toFixed(3);
 		getText(worldPosText).text = "World : " + untyped pointWorldPos.x.toFixed(3) + " / " + untyped pointWorldPos.y.toFixed(3) + " / " + untyped pointWorldPos.z.toFixed(3);
@@ -127,7 +127,7 @@ class PolygonEditor {
 	var movablePoints : Array<MovablePoint> = [];
 	var selectedPoints : Array<h2d.col.Point> = [];
 	var lastPointSelected : h2d.col.Point;
-	var lastPos : h3d.Vector;
+	var lastPos : h3d.col.Point;
 	var selectedEdge : Edge;
 	var selectedEdgeGraphic : h3d.scene.Graphics;
 	//var lastClickStamp = 0.0;
@@ -297,7 +297,7 @@ class PolygonEditor {
 			l = l * l;
 			if(l == 0) return p.distance(s1);
 			var t = hxd.Math.max(0, hxd.Math.min(1, p.sub(s1).dot(s2.sub(s1)) / l));
-			var proj = s1.add((s2.sub(s1).scale(t)));
+			var proj = s1.add((s2.sub(s1).multiply(t)));
 			return p.distance(proj);
 		}
 		if(polygonPrefab.points.length < 2) return null;
@@ -317,10 +317,10 @@ class PolygonEditor {
 	}
 
 	function getFinalPos( mouseX, mouseY ){
-		var worldPos = screenToWorld(mouseX, mouseY).toVector();
+		var worldPos = screenToWorld(mouseX, mouseY);
 		var localPos = getContext().local3d.globalToLocal(worldPos);
 		if( K.isDown( K.CTRL ) ){ // Snap To Grid with Ctrl
-			var gridPos = new h3d.Vector();
+			var gridPos = new h3d.col.Point();
 			if( worldSnap ){
 				var absPos = getContext().local3d.getAbsPos();
 				worldPos = getContext().local3d.localToGlobal(worldPos);
@@ -581,7 +581,7 @@ class PolygonEditor {
 			editModeButton.val(editMode ? "Edit Mode : Enabled" : "Edit Mode : Disabled");
 			editModeButton.toggleClass("editModeEnabled", editMode);
 			setSelected(getContext(), true);
-			if(!editMode) 
+			if(!editMode)
 				refreshInteractive();
 		});
 

@@ -29,6 +29,7 @@ class Ide {
 	var databaseDiff : String;
 	var pakFile : hxd.fmt.pak.FileSystem;
 	var originDataBase : cdb.Database;
+	var dbWatcher : hide.tools.FileWatcher.FileWatchEvent;
 
 	var config : {
 		global : Config,
@@ -189,9 +190,9 @@ class Ide {
 		if( subView != null ) body.className +=" hide-subview";
 
 		// Listen to FileTree dnd
-		new Element(window.window.document).on("dnd_stop.vakata.jstree", function(e, data) {
+		function treeDragFun(data,drop) {
 			var nodeIds : Array<String> = cast data.data.nodes;
-			if(data.data.jstree == null) return;
+			if(data.data.jstree == null) return false;
 			for( ft in getViews(hide.view.FileTree) ) {
 				var paths = [];
 				@:privateAccess {
@@ -205,11 +206,16 @@ class Ide {
 				if(paths.length == 0)
 					continue;
 				var view = getViewAt(mouseX, mouseY);
-				if(view != null) {
-					view.onDragDrop(paths, true);
-					return;
-				}
+				if(view != null)
+					return view.onDragDrop(paths, drop);
 			}
+			return false;
+		}
+		new Element(window.window.document).on("dnd_move.vakata.jstree", function(e, data:Dynamic) {
+			(data.helper:hide.Element).css(treeDragFun(data,false) ? { filter : "brightness(120%)", opacity : 1 } : { filter : "", opacity : 0.5 });
+		});
+		new Element(window.window.document).on("dnd_stop.vakata.jstree", function(e, data) {
+			treeDragFun(data,true);
 		});
 
 		// dispatch global keys based on mouse position
@@ -544,7 +550,7 @@ class Ide {
 			}
 		}
 		loadDatabase();
-		fileWatcher.register(databaseFile,function() {
+		dbWatcher = fileWatcher.register(databaseFile,function() {
 			loadDatabase(true);
 			hide.comp.cdb.Editor.refreshAll(true);
 		});
@@ -576,11 +582,13 @@ class Ide {
 			var render = renderers[0];
 			if( projectConfig.renderer == null )
 				projectConfig.renderer = config.current.get("defaultRenderer");
-			for( r in renderers )
-				if( r.name == projectConfig.renderer ) {
+			for( r in renderers ) {
+				var name = r.displayName == null ? r.name : r.displayName;
+				if( name == projectConfig.renderer ) {
 					render = r;
 					break;
 				}
+			}
 			h3d.mat.MaterialSetup.current = render;
 
 			initMenu();
@@ -708,11 +716,11 @@ class Ide {
 		}
 	}
 
-	public function saveDatabase() {
+	public function saveDatabase( ?forcePrefabs ) {
 		hide.comp.cdb.DataFiles.save(function() {
 			if( databaseDiff != null ) {
-				fileWatcher.ignoreNextChange(databaseDiff);
 				sys.io.File.saveContent(getPath(databaseDiff), toJSON(new cdb.DiffFile().make(originDataBase,database)));
+				fileWatcher.ignorePrevChange(dbWatcher);
 			} else {
 				if( !sys.FileSystem.exists(getPath(databaseFile)) && fileExists(databaseFile) ) {
 					// was loaded from pak, cancel changes
@@ -720,10 +728,10 @@ class Ide {
 					hide.comp.cdb.Editor.refreshAll();
 					return;
 				}
-				fileWatcher.ignoreNextChange(databaseFile);
 				sys.io.File.saveContent(getPath(databaseFile), database.save());
+				fileWatcher.ignorePrevChange(dbWatcher);
 			}
-		});
+		}, forcePrefabs);
 	}
 
 	public function createDBSheet( ?index : Int ) {
@@ -743,10 +751,27 @@ class Ide {
 		path = path.split("\\").join("/");
 		if( StringTools.startsWith(path.toLowerCase(), resourceDir.toLowerCase()+"/") )
 			return path.substr(resourceDir.length+1);
+
+		// is already a relative path
+		if( path.charCodeAt(0) != "/".code && path.charCodeAt(1) != ":".code )
+			return path;
+
+		var resParts = resourceDir.split("/");
+		var pathParts = path.split("/");
+		for( i in 0...resParts.length ) {
+			if( pathParts[i].toLowerCase() != resParts[i].toLowerCase() ) {
+				if( pathParts[i].charCodeAt(pathParts[i].length-1) == ":".code )
+					return path; // drive letter change
+				var newPath = pathParts.splice(i, pathParts.length - i);
+				for( k in 0...resParts.length - i )
+					newPath.unshift("..");
+				return newPath.join("/");
+			}
+		}
 		return path;
 	}
 
-	public static var IMG_EXTS = ["jpg", "jpeg", "gif", "png", "raw", "dds"];
+	public static var IMG_EXTS = ["jpg", "jpeg", "gif", "png", "raw", "dds", "hdr", "tga"];
 	public function chooseImage( onSelect ) {
 		chooseFile(IMG_EXTS, onSelect);
 	}
@@ -754,8 +779,9 @@ class Ide {
 	public function chooseFiles( exts : Array<String>, onSelect : Array<String> -> Void ) {
 		var e = new Element('<input type="file" style="visibility:hidden" value="" accept="${[for( e in exts ) "."+e].join(",")}" multiple="multiple"/>');
 		e.change(function(_) {
-			var files = [for( f in (""+e.val()).split(";") ) makeRelative(f)];
+			var files = [for( f in (""+e.val()).split(";") ) f];
 			if( files.length == 1 && files[0] == "" ) files.pop();
+			var files = [for( f in files ) makeRelative(f)];
 			e.remove();
 			onSelect(files);
 		}).appendTo(window.window.document.body).click();
@@ -764,9 +790,9 @@ class Ide {
 	public function chooseFile( exts : Array<String>, onSelect : Null<String> -> Void ) {
 		var e = new Element('<input type="file" style="visibility:hidden" value="" accept="${[for( e in exts ) "."+e].join(",")}"/>');
 		e.change(function(_) {
-			var file = makeRelative(e.val());
+			var file = e.val();
 			e.remove();
-			onSelect(file == "" ? null : file);
+			onSelect(file == "" ? null : makeRelative(file));
 		}).appendTo(window.window.document.body).click();
 	}
 
@@ -777,17 +803,17 @@ class Ide {
 		var path = path.join(c);
 		var e = new Element('<input type="file" style="visibility:hidden" value="" nwworkingdir="$path" nwsaveas="$file"/>');
 		e.change(function(_) {
-			var file = makeRelative(e.val());
+			var file = e.val();
 			e.remove();
-			onSelect(file == "" ? null : file);
+			onSelect(file == "" ? null : makeRelative(file));
 		}).appendTo(window.window.document.body).click();
 	}
 
-	public function chooseDirectory( onSelect : String -> Void ) {
+	public function chooseDirectory( onSelect : String -> Void, ?isAbsolute = false ) {
 		var e = new Element('<input type="file" style="visibility:hidden" value="" nwdirectory/>');
 		e.change(function(ev) {
-			var dir = makeRelative(ev.getThis().val());
-			onSelect(dir == "" ? null : dir);
+			var dir = ev.getThis().val();
+			onSelect(dir == "" ? null : (isAbsolute ? dir : makeRelative(dir)));
 			e.remove();
 		}).appendTo(window.window.document.body).click();
 	}
@@ -805,12 +831,15 @@ class Ide {
 		return str;
 	}
 
-	public function loadPrefab<T:hrt.prefab.Prefab>( file : String, ?cl : Class<T> ) : T {
+	public function loadPrefab<T:hrt.prefab.Prefab>( file : String, ?cl : Class<T>, ?checkExists ) : T {
 		if( file == null )
 			return null;
 		var l = hrt.prefab.Library.create(file.split(".").pop().toLowerCase());
 		try {
-			l.loadData(parseJSON(sys.io.File.getContent(getPath(file))));
+			var path = getPath(file);
+			if( checkExists && !sys.FileSystem.exists(path) )
+				return null;
+			l.loadData(parseJSON(sys.io.File.getContent(path)));
 		} catch( e : Dynamic ) {
 			error("Invalid prefab ("+e+")");
 			throw e;
@@ -849,6 +878,7 @@ class Ide {
 
 	function browseFiles( callb : String -> Void ) {
 		function browseRec(path) {
+			if( path == ".tmp" ) return;
 			for( p in sys.FileSystem.readDirectory(resourceDir + "/" + path) ) {
 				var p = path == "" ? p : path + "/" + p;
 				if( sys.FileSystem.isDirectory(resourceDir+"/"+p) ) {
@@ -887,7 +917,7 @@ class Ide {
 				if( StringTools.endsWith(dir,"/res") || StringTools.endsWith(dir,"\\res") )
 					dir = dir.substr(0,-4);
 				setProject(dir);
-			});
+			}, true);
 		});
 		menu.find(".project .clear").click(function(_) {
 			ideConfig.recentProjects = [];
@@ -903,11 +933,49 @@ class Ide {
 			try sys.FileSystem.deleteFile(Ide.inst.appPath + "/props.json") catch( e : Dynamic ) {};
 			untyped chrome.runtime.reload();
 		});
+		menu.find(".build-files").click(function(_) {
+			var lastTime = haxe.Timer.stamp();
+			var all = [""];
+			var done = 0;
+			var prevTitle = window.title;
+			function loop() {
+				while( true ) {
+					if( all.length == 0 ) {
+						window.title = prevTitle;
+						return;
+					}
+					if( haxe.Timer.stamp() - lastTime > 0.1 ) {
+						lastTime = haxe.Timer.stamp();
+						window.title = '(${Std.int(done*1000/(done+all.length))/10}%) '+all[0];
+						haxe.Timer.delay(loop,0);
+						return;
+					}
+					var path = all.shift();
+					var e = try hxd.res.Loader.currentInstance.load(path).entry catch( e : hxd.res.NotFound ) null;
+					if( e == null && path == "" ) e = hxd.res.Loader.currentInstance.fs.getRoot();
+					if( e != null ) done++;
+					if( e != null && e.isDirectory ) {
+						var base = path;
+						if( base != "" ) base += "/";
+						for( f in sys.FileSystem.readDirectory(getPath(path)) ) {
+							var path = base + f;
+							if( path == ".tmp" ) continue;
+							if( sys.FileSystem.isDirectory(getPath(path)) )
+								all.unshift(path);
+							else
+								all.push(path);
+						}
+					}
+				}
+			}
+			loop();
+		});
 
 		for( r in renderers ) {
-			new Element("<menu type='checkbox'>").attr("label", r.name).prop("checked",r == h3d.mat.MaterialSetup.current).appendTo(menu.find(".project .renderers")).click(function(_) {
+			var name = r.displayName != null ? r.displayName : r.name;
+			new Element("<menu type='checkbox'>").attr("label", name).prop("checked",r == h3d.mat.MaterialSetup.current).appendTo(menu.find(".project .renderers")).click(function(_) {
 				if( r != h3d.mat.MaterialSetup.current ) {
-					projectConfig.renderer = r.name;
+					projectConfig.renderer = name;
 					config.user.save();
 					setProject(ideConfig.currentProject);
 				}
@@ -976,6 +1044,9 @@ class Ide {
 		}).attr("disabled", databaseDiff == null ? "disabled" : null);
 		db.find(".dbCustom").click(function(_) {
 			open("hide.view.CdbCustomTypes",{});
+		});
+		db.find(".dbFormulas").click(function(_) {
+			open("hide.comp.cdb.FormulasView",{ path : config.current.get("cdb.formulasFile") });
 		});
 
 		// layout

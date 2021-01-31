@@ -30,7 +30,7 @@ class FXAnimation extends h3d.scene.Object {
 	var prevTime = -1.0;
 	var randSeed : Int;
 
-	var startLoop : Float;
+	var startLoop : Float = -1.0;
 	var endLoop : Float;
 
 	public function new(?parent) {
@@ -88,7 +88,7 @@ class FXAnimation extends h3d.scene.Object {
 			for(emitter in emitters)
 				emitter.setParticleVibility(ctx.visibleFlag);
 
-		if (additionLoopDuration > 0) {
+		if (additionLoopDuration > 0 && startLoop >= 0) {
 			if (totalTime > startLoop) {
 				var timeLeft = endLoop + additionLoopDuration - totalTime;
 				if (timeLeft > 0) {
@@ -115,6 +115,7 @@ class FXAnimation extends h3d.scene.Object {
 	}
 
 	static var tempMat = new h3d.Matrix();
+	static var tempTransform = new h3d.Matrix();
 	static var tempVec = new h3d.Vector();
 	public function setTime( time : Float ) {
 		this.localTime = time;
@@ -136,7 +137,7 @@ class FXAnimation extends h3d.scene.Object {
 						m.rotate(rotation.x, rotation.y, rotation.z);
 					}
 
-					var baseMat = anim.elt.getTransform();
+					var baseMat = anim.elt.getTransform(tempTransform);
 					var offset = baseMat.getPosition(tempVec);
 					baseMat.tx = baseMat.ty = baseMat.tz = 0.0;  // Ignore
 					m.multiply(baseMat, m);
@@ -204,7 +205,9 @@ class FXAnimation extends h3d.scene.Object {
 			for(em in emitters) {
 				if (prevTime > localTime) {
 					@:privateAccess em.curTime = em.lastTime = time;
+					#if editor
 					em.reset();
+					#end
 				}
 				if(em.visible)
 					em.setTime(time);

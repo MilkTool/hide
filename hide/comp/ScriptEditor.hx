@@ -13,12 +13,13 @@ class ScriptChecker {
 
 	static var TYPES_SAVE = new Map();
 	static var ERROR_SAVE = new Map();
+	static var TYPE_CHECK_HOOKS : Array<ScriptChecker->Void> = [];
 	var ide : hide.Ide;
 	var apiFiles : Array<String>;
-	var config : hide.Config;
-	var documentName : String;
-	var constants : Map<String,Dynamic>;
-	var evalTo : String;
+	public var config : hide.Config;
+	public var documentName : String;
+	public var constants : Map<String,Dynamic>;
+	public var evalTo : String;
 	public var checker(default,null) : hscript.Checker;
 
 	public function new( config : hide.Config, documentName : String, ?constants : Map<String,Dynamic> ) {
@@ -114,41 +115,8 @@ class ScriptChecker {
 			}
 
 			if( api.cdbEnums != null ) {
-				for( c in api.cdbEnums ) {
-					var path = c.split(".");
-					var sname = path.join("@");
-					var objPath = null;
-					if( path.length > 1 ) // might be a scoped id
-						objPath = this.constants.get("cdb.objID").split(":");
-					for( s in ide.database.sheets ) {
-						if( s.name != sname ) continue;
-						var name = path[path.length - 1];
-						name = name.charAt(0).toUpperCase() + name.substr(1);
-						var kname = path.join("_")+"Kind";
-						kname = kname.charAt(0).toUpperCase() + kname.substr(1);
-						if( cdbPack != "" ) kname = cdbPack + "." + kname;
-						var kind = checker.types.resolve(kname);
-						if( kind == null )
-							kind = TEnum({ name : kname, params : [], constructors : [] },[]);
-						var cl : hscript.Checker.CClass = {
-							name : name,
-							params : [],
-							fields : new Map(),
-							statics : new Map()
-						};
-						var refPath = s.idCol.scope == null ? null : objPath.slice(0, s.idCol.scope).join(":")+":";
-						for( o in s.all ) {
-							var id = o.id;
-							if( id == null || id == "" ) continue;
-							if( refPath != null ) {
-								if( !StringTools.startsWith(id, refPath) ) continue;
-								id = id.substr(refPath.length);
-							}
-							cl.fields.set(id, { name : id, params : [], canWrite : false, t : kind, isPublic: true, complete : true });
-						}
-						checker.setGlobal(name, TInst(cl,[]));
-					}
-				}
+				for( c in api.cdbEnums )
+					addCDBEnum(c, cdbPack);
 			}
 
 			if( api.evalTo != null )
@@ -161,7 +129,15 @@ class ScriptChecker {
 			else {
 				switch( ctx ) {
 				case TInst(c,_):
-					for( f in c.fields ) if( f.t.match(TFun(_)) ) f.isPublic = true; // allow access to private methods
+					var cc = c;
+					while( true ) {
+						for( f in cc.fields ) if( f.t.match(TFun(_)) ) f.isPublic = true; // allow access to private methods
+						if( cc.superClass == null ) break;
+						cc = switch( cc.superClass ) {
+						case TInst(c,_): c;
+						default: throw "assert";
+						}
+					}
 					checker.setGlobals(c);
 				default: error(context+" is not a class");
 				}
@@ -169,6 +145,8 @@ class ScriptChecker {
 		}
 		checker.allowUntypedMeta = true;
 		checker.allowGlobalsDefine = allowGlobalsDefine;
+		for( c in TYPE_CHECK_HOOKS )
+			c(this);
 	}
 
 	function getFields( tpath : String ) {
@@ -186,6 +164,46 @@ class ScriptChecker {
 			ERROR_SAVE.set(msg,true);
 			ide.error(msg);
 		}
+	}
+
+	public function addCDBEnum( name : String, ?cdbPack : String ) {
+		var path = name.split(".");
+		var sname = path.join("@");
+		var objPath = null;
+		if( path.length > 1 ) { // might be a scoped id
+			var objID = this.constants.get("cdb.objID");
+			objPath = objID == null ? [] : objID.split(":");
+		}
+		for( s in ide.database.sheets ) {
+			if( s.name != sname ) continue;
+			var name = path[path.length - 1];
+			name = name.charAt(0).toUpperCase() + name.substr(1);
+			var kname = path.join("_")+"Kind";
+			kname = kname.charAt(0).toUpperCase() + kname.substr(1);
+			if( cdbPack != "" ) kname = cdbPack + "." + kname;
+			var kind = checker.types.resolve(kname);
+			if( kind == null )
+				kind = TEnum({ name : kname, params : [], constructors : [] },[]);
+			var cl : hscript.Checker.CClass = {
+				name : name,
+				params : [],
+				fields : new Map(),
+				statics : new Map()
+			};
+			var refPath = s.idCol.scope == null ? null : objPath.slice(0, s.idCol.scope).join(":")+":";
+			for( o in s.all ) {
+				var id = o.id;
+				if( id == null || id == "" ) continue;
+				if( refPath != null ) {
+					if( !StringTools.startsWith(id, refPath) ) continue;
+					id = id.substr(refPath.length);
+				}
+				cl.fields.set(id, { name : id, params : [], canWrite : false, t : kind, isPublic: true, complete : true });
+			}
+			checker.setGlobal(name, TInst(cl,[]));
+			return kind;
+		}
+		return null;
 	}
 
 	function typeFromValue( value : Dynamic ) : hscript.Checker.TType {
@@ -303,35 +321,9 @@ class ScriptEditor extends CodeEditor {
 			vars = [];
 			var t = checker.getCompletion(script);
 			if( t != null ) {
-				switch( checker.checker.follow(t) ) {
-				case TInst(c,args):
-					var map = (t) -> checker.checker.apply(t,c.params,args);
-					while( c != null ) {
-						for( f in c.fields ) {
-							if( !f.isPublic || !f.complete ) continue;
-							var name = f.name;
-							var t = map(f.t);
-							if( StringTools.startsWith(name,"a_") ) {
-								t = checker.checker.unasync(t);
-								name = name.substr(2);
-							}
-							vars.set(name, t);
-						}
-						if( c.superClass == null ) break;
-						switch( c.superClass ) {
-						case TInst(csup,args):
-							var curMap = map;
-							map = (t) -> curMap(checker.checker.apply(t,csup.params,args));
-							c = csup;
-						default:
-							break;
-						}
-					}
-				case TAnon(fields):
-					for( f in fields )
-						vars.set(f.name, f.t);
-				default:
-				}
+				var fields = checker.checker.getFields(t);
+				for( f in fields )
+					vars.set(f.name, f.t);
 			}
 		}
 		var checker = checker.checker;
@@ -369,6 +361,13 @@ class ScriptEditor extends CodeEditor {
 			clearError();
 		else
 			setError(hscript.Printer.errorToString(error), error.line, error.pmin, error.pmax);
+	}
+
+	public static function register( cl : Class<Dynamic> ) : Bool {
+		@:privateAccess ScriptChecker.TYPE_CHECK_HOOKS.push(function(checker) {
+			Type.createInstance(cl,[checker]);
+		});
+		return true;
 	}
 
 }

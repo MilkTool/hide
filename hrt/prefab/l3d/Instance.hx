@@ -20,13 +20,11 @@ class Instance extends Object3D {
 			try {
 				if(hrt.prefab.Library.getPrefabType(modelPath) != null) {
 					var ref = ctx.shared.loadPrefab(modelPath);
-					var ctx = ctx.clone(this);
-					ctx.isRef = true;
 					if(ref != null) {
-						var prev = ctx.shared.root3d;
-						ctx.shared.root3d = ctx.local3d; // allows Context.locateObject to work (constraints)
+						var prevShared = ctx.shared;
+						ctx.shared = ctx.shared.cloneRef(this, modelPath);
 						ref.make(ctx);
-						ctx.shared.root3d = prev;
+						ctx.shared = prevShared;
 					}
 				}
 				else {
@@ -40,7 +38,7 @@ class Instance extends Object3D {
 		}
 		else {
 			var tile = unknown ? getDefaultTile().center() : findTile(kind.sheet, kind.idx.obj).center();
-			var objFollow = new h2d.ObjectFollower(ctx.local3d, ctx.shared.root2d);
+			var objFollow = new h2d.ObjectFollower(ctx.local3d, ctx.local2d);
 			objFollow.followVisibility = true;
 			var bmp = new h2d.Bitmap(tile, objFollow);
 			ctx.local2d = objFollow;
@@ -116,8 +114,16 @@ class Instance extends Object3D {
 	override function removeInstance(ctx:Context):Bool {
 		if(!super.removeInstance(ctx))
 			return false;
-		if(ctx.local2d != null)
-			ctx.local2d.remove();
+		if(ctx.local2d != null ) {
+			var p = parent;
+			var pctx = null;
+			while( p != null ) {
+				pctx = ctx.shared.getContexts(p)[0];
+				if( pctx != null ) break;
+				p = p.parent;
+			}
+			if( ctx.local2d != (pctx == null ? ctx.shared.root2d : pctx.local2d) ) ctx.local2d.remove();
+		}
 		return true;
 	}
 

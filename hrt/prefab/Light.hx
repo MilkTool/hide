@@ -60,6 +60,14 @@ class Light extends Object3D {
 	public var cookieTex : h3d.mat.Texture = null;
 	public var cookiePath : String = null;
 
+	// Dir
+	public var maxDist : Float = -1;
+	public var minDist : Float = -1;
+	public var autoShrink : Bool = true;
+
+	// Debug
+	public var debugDisplay : Bool = true;
+
 	static function getShadowsDefault() : LightShadows {
 		return {
 			mode : None,
@@ -91,6 +99,10 @@ class Light extends Object3D {
 		obj.fallOff = fallOff;
 		obj.cookiePath = cookiePath;
 		obj.occlusionFactor = occlusionFactor;
+		obj.maxDist = maxDist;
+		obj.minDist = minDist;
+		obj.autoShrink = autoShrink;
+		obj.debugDisplay = debugDisplay;
 
 		if( shadows.mode != None ) {
 			obj.shadows = Reflect.copy(shadows);
@@ -112,6 +124,10 @@ class Light extends Object3D {
 		fallOff = obj.fallOff;
 		cookiePath = obj.cookiePath;
 		occlusionFactor = obj.occlusionFactor == null ? 0.0 : obj.occlusionFactor;
+		if( obj.maxDist != null ) maxDist = obj.maxDist;
+		if( obj.minDist != null ) minDist = obj.minDist;
+		if( obj.autoShrink != null ) autoShrink = obj.autoShrink;
+		if( obj.debugDisplay != null ) debugDisplay = obj.debugDisplay;
 
 		if( obj.shadows != null ) {
 			var sh : Dynamic = Reflect.copy(obj.shadows);
@@ -134,8 +150,8 @@ class Light extends Object3D {
 			shadows = getShadowsDefault();
 	}
 
-	override function applyPos( o : h3d.scene.Object ) {
-		//super.applyPos(o); // Disable scaling
+	override function applyTransform( o : h3d.scene.Object ) {
+		//super.applyTransform(o); // Disable scaling
 		o.x = x;
 		o.y = y;
 		o.z = z;
@@ -173,7 +189,7 @@ class Light extends Object3D {
 		cookieTex = initTexture(cookiePath);
 		updateInstance(ctx);
 
-		if(!ctx.isRef)
+		if( ctx.shared.parent == null )
 			loadBaked(ctx);
 		return ctx;
 	}
@@ -201,6 +217,14 @@ class Light extends Object3D {
 			pbrLight.occlusionFactor = occlusionFactor;
 
 			switch( kind ) {
+			case Directional:
+				var dl = Std.downcast(light, h3d.scene.pbr.DirLight);
+				if( dl.shadows != null ) {
+					var s = Std.downcast(dl.shadows, h3d.pass.DirShadowMap);
+					s.maxDist = maxDist;
+					s.minDist = minDist;
+					s.autoShrink = autoShrink;
+				}
 			case Spot:
 				var sl = Std.downcast(light, h3d.scene.pbr.SpotLight);
 				sl.range = range;
@@ -371,9 +395,9 @@ class Light extends Object3D {
 		var isSelected = false;
 		if(sel != null){
 			isSelected = sel.visible;
-			if( debugPoint != null ) debugPoint.visible = isSelected || ctx.shared.editorDisplay;
-			if( debugDir != null ) debugDir.visible = isSelected || ctx.shared.editorDisplay;
-			if( debugSpot != null ) debugSpot.visible = isSelected || ctx.shared.editorDisplay;
+			if( debugPoint != null ) debugPoint.visible = (isSelected || ctx.shared.editorDisplay) && debugDisplay;
+			if( debugDir != null ) debugDir.visible = (isSelected || ctx.shared.editorDisplay) && debugDisplay;
+			if( debugSpot != null ) debugSpot.visible = (isSelected || ctx.shared.editorDisplay) && debugDisplay;
 			sel.name = "__selection";
 		}
 
@@ -407,6 +431,7 @@ class Light extends Object3D {
 		var group = new hide.Element('
 			<div class="group" name="Light">
 				<dl>
+					<dt>Debug Display</dt><dd><input type="checkbox" field="debugDisplay"/></dd>
 					<dt>Main Light</dt><dd><input type="checkbox" field="isMainLight"/></dd>
 					<dt>Kind</dt><dd>
 						<select field="kind">
@@ -422,6 +447,12 @@ class Light extends Object3D {
 		');
 
 		switch( kind ) {
+		case Directional:
+			group.append(hide.comp.PropsEditor.makePropsList([
+				{ name: "maxDist", t: PFloat(0, 1000), def: -1 },
+				{ name: "minDist", t: PFloat(0, 50), def: -1 },
+				{ name: "autoShrink", t: PBool, def: true },
+			]));
 		case Spot:
 			group.append(hide.comp.PropsEditor.makePropsList([
 				{ name: "range", t: PFloat(1, 20), def: 10 },

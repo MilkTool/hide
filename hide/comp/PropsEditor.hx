@@ -96,7 +96,7 @@ class PropsEditor extends Component {
 	}
 
 	public static function makeLabelEl(name: String, content: Element) {
-		var el = new Element('<dt>${name}</dt><dd></dd>');
+		var el = new Element('<span><dt>${name}</dt><dd></dd></span>');
 		content.appendTo(el.find("dd"));
 		return el;
 	}
@@ -177,7 +177,7 @@ class PropsEditor extends Component {
 
 			var s = g.closest(".section");
 			var key = (s.length == 0 ? "" : StringTools.trim(s.children("h1").text()) + "/") + name;
-			if( getDisplayState("group:" + key) != false )
+			if( getDisplayState("group:" + key) != false && !g.hasClass("closed") )
 				g.addClass("open");
 		}
 

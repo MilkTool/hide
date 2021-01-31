@@ -13,12 +13,16 @@ class ContextShared extends hrt.prefab.ContextShared {
 		return scene;
 	}
 
+	override function allocForRef() {
+		return new ContextShared(scene);
+	}
+
 	override function onError( e : Dynamic ) {
 		hide.Ide.inst.error(e);
 	}
 
 	override function loadPrefab( path : String ) : hrt.prefab.Prefab {
-		return hide.Ide.inst.loadPrefab(path);
+		return hide.Ide.inst.loadPrefab(path, null, true);
 	}
 
 	override function loadShader( path : String ) {

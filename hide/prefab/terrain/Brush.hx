@@ -2,7 +2,6 @@ package hide.prefab.terrain;
 import h3d.shader.pbr.AlphaMultiply;
 import h3d.shader.FixedColor;
 import h3d.mat.Stencil;
-import hrt.prefab.l3d.AdvancedDecal;
 using Lambda;
 import hxd.Key as K;
 
@@ -33,7 +32,7 @@ class Brush {
 		}
 	}
 
-	public function drawTo( target : h3d.mat.Texture, pos : h3d.Vector, tileSize : h2d.col.Point, ?offset = 0 ) {
+	public function drawTo( target : h3d.mat.Texture, pos : h3d.col.Point, tileSize : h2d.col.Point, ?offset = 0 ) {
 		var texSize = new h2d.col.IPoint(target.width + offset, target.height + offset);
 		scaleForTex(tileSize, texSize);
 		bitmap.setPosition(
@@ -120,7 +119,7 @@ class BrushPreview extends h3d.scene.Mesh {
 		material.mainPass.stencil.setOp(Keep, Keep, Keep);
 	}
 
-	public function previewAt( brush : Brush, pos : h3d.Vector ) {
+	public function previewAt( brush : Brush, pos : h3d.col.Point ) {
 		setPosition(pos.x, pos.y, pos.z);
 		setScale(brush.size);
 		scaleZ = 1000;

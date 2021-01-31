@@ -322,6 +322,7 @@ class SplineEditor {
 		if( spd.tangent != null ) {
 			var dir = spd.tangent.toVector();
 			dir.transform3x3(invMatrix); // Don't take the translation
+			dir.scale3(-1);
 			var rot = h3d.Matrix.lookAtX(dir);
 			sp.setDirection(rot.front());
 		}
@@ -360,7 +361,7 @@ class SplineEditor {
 			var gizmo = new hide.view.l3d.Gizmo(editContext.scene);
 			gizmo.getRotationQuat().identity();
 			gizmo.visible = true;
-			var worldPos = ctx.local3d.localToGlobal(new h3d.Vector(sp.x, sp.y, sp.z));
+			var worldPos = ctx.local3d.localToGlobal(new h3d.col.Point(sp.x, sp.y, sp.z));
 			gizmo.setPosition(worldPos.x, worldPos.y, worldPos.z);
 			@:privateAccess sceneEditor.updates.push( gizmo.update );
 			gizmos.insert(gizmos.length, gizmo);
@@ -594,6 +595,7 @@ class SplineEditor {
 		editModeButton.toggleClass("editModeEnabled", editMode);
 		editModeButton.click(function(_) {
 			editMode = !editMode;
+			prefab.onEdit(editMode);
 			editModeButton.val(editMode ? "Edit Mode : Enabled" : "Edit Mode : Disabled");
 			editModeButton.toggleClass("editModeEnabled", editMode);
 			setSelected(getContext(), true);

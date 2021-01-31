@@ -19,6 +19,11 @@ typedef EditorApi = {
 	function save() : Void;
 }
 
+typedef EditorColumnProps = {
+	var ?formula : String;
+	var ?ignoreExport : Bool;
+}
+
 @:allow(hide.comp.cdb)
 class Editor extends Component {
 
@@ -43,6 +48,7 @@ class Editor extends Component {
 	public var cursor : Cursor;
 	public var keys : hide.ui.Keys;
 	public var undo : hide.ui.UndoHistory;
+	public var formulas : Formulas;
 
 	public function new(config,api) {
 		super(null,null);
@@ -104,7 +110,7 @@ class Editor extends Component {
 				cursor.update();
 			}
 		});
-		keys.register("cdb.gotoReference", gotoReference);
+		keys.register("cdb.gotoReference", () -> gotoReference(cursor.getCell()));
 		base = sheet.base;
 		cursor = new Cursor(this);
 		if( displayMode == null ) displayMode = Table;
@@ -151,6 +157,18 @@ class Editor extends Component {
 		searchFilter(currentFilter);
 	}
 
+	public function setFilter( f : String ) {
+		if( searchBox != null ) {
+			if( f == null )
+				searchBox.hide();
+			else {
+				searchBox.show();
+				searchBox.find("input").val(f);
+			}
+		}
+		searchFilter(f);
+	}
+
 	function searchFilter( filter : String ) {
 		if( filter == "" ) filter = null;
 		if( filter != null ) filter = filter.toLowerCase();
@@ -190,6 +208,11 @@ class Editor extends Component {
 			var out = {};
 			for( x in sel.x1...sel.x2+1 ) {
 				var c = cursor.table.columns[x];
+				var form = @:privateAccess formulas.getFormulaNameFromValue(obj, c);
+				if( form != null ) {
+					Reflect.setField(out, c.name+"__f", form);
+					continue;
+				}
 				var v = Reflect.field(obj, c.name);
 				if( v != null )
 					Reflect.setField(out, c.name, v);
@@ -209,22 +232,24 @@ class Editor extends Component {
 		var columns = cursor.table.columns;
 		var sheet = cursor.table.sheet;
 		var realSheet = cursor.table.getRealSheet();
+
+		var x1 = cursor.x;
+		var y1 = cursor.y;
+		var x2 = cursor.select == null ? x1 : cursor.select.x;
+		var y2 = cursor.select == null ? y1 : cursor.select.y;
+		if( x1 > x2 ) {
+			var tmp = x1;
+			x1 = x2;
+			x2 = tmp;
+		}
+		if( y1 > y2 ) {
+			var tmp = y1;
+			y1 = y2;
+			y2 = tmp;
+		}
+
 		if( clipboard == null || text != clipboard.text ) {
 			if( cursor.x < 0 || cursor.y < 0 ) return;
-			var x1 = cursor.x;
-			var y1 = cursor.y;
-			var x2 = cursor.select == null ? x1 : cursor.select.x;
-			var y2 = cursor.select == null ? y1 : cursor.select.y;
-			if( x1 > x2 ) {
-				var tmp = x1;
-				x1 = x2;
-				x2 = tmp;
-			}
-			if( y1 > y2 ) {
-				var tmp = y1;
-				y1 = y2;
-				y2 = tmp;
-			}
 			beginChanges();
 			for( x in x1...x2+1 ) {
 				var col = columns[x];
@@ -251,9 +276,11 @@ class Editor extends Component {
 					}
 					if( value == null ) continue;
 					var obj = sheet.lines[y];
+					formulas.removeFromValue(obj, col);
 					Reflect.setField(obj, col.name, value);
 				}
 			}
+			formulas.evaluateAll(realSheet);
 			endChanges();
 			realSheet.sync();
 			refreshAll();
@@ -262,7 +289,10 @@ class Editor extends Component {
 		beginChanges();
 		var posX = cursor.x < 0 ? 0 : cursor.x;
 		var posY = cursor.y < 0 ? 0 : cursor.y;
-		for( obj1 in clipboard.data ) {
+		var data = clipboard.data;
+		if( data.length == 1 && y1 != y2 )
+			data = [for( i in y1...y2+1 ) data[0]];
+		for( obj1 in data ) {
 			if( posY == sheet.lines.length ) {
 				if( !cursor.table.canInsert() ) break;
 				sheet.newLine();
@@ -275,6 +305,12 @@ class Editor extends Component {
 
 				if( !cursor.table.canEditColumn(c2.name) )
 					continue;
+
+				var form = Reflect.field(obj1, c1.name+"__f");
+				if( form != null && c2.type.equals(c2.type) ) {
+					formulas.setForValue(obj2, sheet, c2, form);
+					continue;
+				}
 
 				var f = base.getConvFunction(c1.type, c2.type);
 				var v : Dynamic = Reflect.field(obj1, c1.name);
@@ -295,6 +331,7 @@ class Editor extends Component {
 			}
 			posY++;
 		}
+		formulas.evaluateAll(realSheet);
 		endChanges();
 		realSheet.sync();
 		refreshAll();
@@ -345,11 +382,14 @@ class Editor extends Component {
 	public function changeObject( line : Line, column : cdb.Data.Column, value : Dynamic ) {
 		beginChanges();
 		var prev = Reflect.field(line.obj, column.name);
-		if( value == null )
-			Reflect.deleteField(line.obj, column.name);
-		else
+		if( value == null ) {
+			formulas.setForValue(line.obj, line.table.sheet, column, null);
+		} else {
 			Reflect.setField(line.obj, column.name, value);
+			formulas.removeFromValue(line.obj, column);
+		}
 		line.table.getRealSheet().updateValue(column, line.index, prev);
+		line.evaluate(); // propagate
 		endChanges();
 	}
 
@@ -357,7 +397,7 @@ class Editor extends Component {
 		Call before modifying the database, allow to group several changes together.
 		Allow recursion, only last endChanges() will trigger db save and undo point creation.
 	**/
-	public function beginChanges() {
+	public function beginChanges( ?structure : Bool ) {
 		if( changesDepth == 0 )
 			undoState.unshift(getState());
 		changesDepth++;
@@ -484,8 +524,7 @@ class Editor extends Component {
 		// todo : port from old cdb
 	}
 
-	function gotoReference() {
-		var c = cursor.getCell();
+	function gotoReference( c : Cell ) {
 		if( c == null || c.value == null ) return;
 		switch( c.column.type ) {
 		case TRef(s):
@@ -550,6 +589,9 @@ class Editor extends Component {
 			cursor.load(c);
 		});
 
+		formulas = new Formulas(this);
+		formulas.evaluateAll(currentSheet.realSheet);
+
 		var content = new Element("<table>");
 		tables = [];
 		new Table(this, currentSheet, content, displayMode);
@@ -563,6 +605,12 @@ class Editor extends Component {
 				if( t.sheet.name == cursor.table.sheet.name )
 					cursor.table = t;
 			cursor.update();
+		}
+
+		if( currentFilter != null ) {
+			updateFilter();
+			searchBox.show();
+			txt.val(currentFilter);
 		}
 	}
 
@@ -587,13 +635,19 @@ class Editor extends Component {
 		return null;
 	}
 
+	public function getColumnProps( c : cdb.Data.Column ) {
+		var pr : EditorColumnProps = c.editor;
+		if( pr == null ) pr = {};
+		return pr;
+	}
+
 	public function newColumn( sheet : cdb.Sheet, ?index : Int, ?onDone : cdb.Data.Column -> Void, ?col ) {
-		var modal = new hide.comp.cdb.ModalColumnForm(base, sheet, col, element);
+		var modal = new hide.comp.cdb.ModalColumnForm(this, sheet, col, element);
 		modal.setCallback(function() {
-			var c = modal.getColumn(base, sheet, col);
+			var c = modal.getColumn(col);
 			if (c == null)
 				return;
-			beginChanges();
+			beginChanges(true);
 			var err;
 			if( col != null )
 				err = base.updateColumn(sheet, col, c);
@@ -682,11 +736,13 @@ class Editor extends Component {
 			}},
 			{ label: "", isSeparator: true },
 			{ label : "Delete", click : function () {
-				beginChanges();
-				if( table.displayMode == Properties )
+				if( table.displayMode == Properties ) {
+					beginChanges();
 					changeObject(cell.line, col, base.getDefault(col,sheet));
-				else
+				} else {
+					beginChanges(true);
 					sheet.deleteColumn(col.name);
+				}
 				endChanges();
 				refresh();
 			}}
@@ -717,7 +773,7 @@ class Editor extends Component {
 			menu.insert(1,{ label : "Edit all", click : function() editScripts(table,col) });
 		if( table.displayMode == Properties ) {
 			menu.push({ label : "Delete All", click : function() {
-				beginChanges();
+				beginChanges(true);
 				table.sheet.deleteColumn(col.name);
 				endChanges();
 				refresh();

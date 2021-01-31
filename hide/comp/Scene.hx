@@ -72,8 +72,8 @@ class Scene extends Component implements h3d.IDrawable {
 	public var speed : Float = 1.0;
 	public var visible(default, null) : Bool = true;
 	public var editor : hide.comp.SceneEditor;
-	public var refreshIfUnfocused = false;
 	var chunkifyS3D : Bool = false;
+	var unFocusedTime = 0.;
 
 	public function new(chunkifyS3D: Bool = false, config, parent, el) {
 		super(parent,el);
@@ -97,6 +97,9 @@ class Scene extends Component implements h3d.IDrawable {
 			c();
 		cleanup = [];
 		engine.dispose();
+		@:privateAccess engine.driver = null;
+		untyped canvas.__scene = null;
+		canvas = null;
 	}
 
 	public function addListener(f) {
@@ -121,6 +124,7 @@ class Scene extends Component implements h3d.IDrawable {
 		engine.backgroundColor = 0xFF111111;
 		canvas.id = null;
 		engine.onReady = function() {
+			if( engine.driver == null ) return;
 			new Element(canvas).on("resize", function() {
 				@:privateAccess window.checkResize();
 			});
@@ -190,12 +194,19 @@ class Scene extends Component implements h3d.IDrawable {
 			ide.unregisterUpdate(sync);
 			return;
 		}
-		if( !visible || (!Ide.inst.isFocused && !refreshIfUnfocused) || pendingCount > 0)
+		if( !visible || pendingCount > 0)
 			return;
-		refreshIfUnfocused = false;
+		var dt = hxd.Timer.tmod * speed / 60;
+		if( !Ide.inst.isFocused ) {
+			// refresh at 1FPS
+			unFocusedTime += dt;
+			if( unFocusedTime < 1 ) return;
+			unFocusedTime -= 1;
+			dt = 1;
+		} else
+			unFocusedTime = 0;
 		setCurrent();
 		sevents.checkEvents();
-		var dt = hxd.Timer.tmod * speed / 60;
 		s2d.setElapsedTime(dt);
 		s3d.setElapsedTime(dt);
 		for( f in listeners )
@@ -250,6 +261,7 @@ class Scene extends Component implements h3d.IDrawable {
 		var path = ide.getPath(img.entry.path);
 		var img = new Element('<img src="file://$path" crossorigin="anonymous"/>');
 		function onLoaded() {
+			if( engine.driver == null ) return;
 			setCurrent();
 			var bmp : js.html.ImageElement = cast img[0];
 			t.resize(bmp.width, bmp.height);

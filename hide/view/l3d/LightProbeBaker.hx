@@ -149,7 +149,7 @@ class LightProbeBaker {
 		offScreenScene.renderer.process(passes);
 	}
 
-	var pixels : hxd.Pixels.PixelsFloat = null;
+	var pixels : hxd.Pixels = null;
 	public function bake( volumetricLightMap : hrt.prefab.vlm.VolumetricMesh, resolution : Int, ?time :Float ) {
 
 		var timer = haxe.Timer.stamp();
@@ -182,7 +182,7 @@ class LightProbeBaker {
 			// Bake a Probe
 			for( f in 0...6 ) {
 				engine.begin();
-				customCamera.setCubeMap(f, volumetricLightMap.getProbePosition(coords));
+				customCamera.setCubeMap(f, volumetricLightMap.getProbePosition(coords).toVector());
 				customCamera.update();
 				engine.pushTarget(envMap, f);
 				engine.clear(0,1,0);
@@ -313,7 +313,7 @@ class LightProbeBaker {
 		@:privateAccess renderer.ctx.engine.flushTarget();
 	}
 
-	function convertOuputTexturesIntoSH( volumetricLightMap : hrt.prefab.vlm.VolumetricMesh, pixelsOut : hxd.Pixels.PixelsFloat ) {
+	function convertOuputTexturesIntoSH( volumetricLightMap : hrt.prefab.vlm.VolumetricMesh, pixelsOut : hxd.Pixels ) {
 
 		var order = volumetricLightMap.shOrder;
 		var sh = new hrt.prefab.vlm.SphericalHarmonic(order);
@@ -321,7 +321,7 @@ class LightProbeBaker {
 		var maxCoef : Int = Std.int(Math.min(8, coefCount));
 
 		for(coef in 0 ... maxCoef){
-			var pixels : hxd.Pixels.PixelsFloat = textureArray[coef].capturePixels();
+			var pixels = textureArray[coef].capturePixels();
 			for( index in 0 ... pixels.width){
 				var coefs : h3d.Vector = pixels.getPixelF(index, 0);
 				var coords = volumetricLightMap.getProbeCoords(index);
@@ -346,7 +346,7 @@ class LightProbeBaker {
 	function convertEnvIntoSH_CPU( env : h3d.mat.Texture, order : Int ) : hrt.prefab.vlm.SphericalHarmonic {
 		var coefCount = order * order;
 		var sphericalHarmonic = new hrt.prefab.vlm.SphericalHarmonic(order);
-		var face : hxd.Pixels.PixelsFloat;
+		var face : hxd.Pixels;
 		var weightSum = 0.0;
 		var invWidth = 1.0 / env.width;
 		var shData : Array<Float> = [for ( value in 0...coefCount ) 0];

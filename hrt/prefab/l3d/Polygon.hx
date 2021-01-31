@@ -1,8 +1,10 @@
 package hrt.prefab.l3d;
+import hxd.Math;
 import h2d.col.Point;
 
+
 enum Shape {
-	Quad;
+	Quad(subdivision : Int);
 	Disc(segments: Int, angle: Float, inner: Float, rings:Int);
 	Custom;
 }
@@ -11,10 +13,10 @@ typedef PrimCache = Map<Shape, h3d.prim.Polygon>;
 
 class Polygon extends Object3D {
 
-	public var shape(default, null) : Shape = Quad;
+	public var shape(default, null) : Shape = Quad(0);
 	public var points : h2d.col.Polygon;
+	public var color : Int = 0xFFFFFFFF;
 	#if editor
-	public var debugColor : Int = 0xFFFFFFFF;
 	public var editor : hide.prefab.PolygonEditor;
 	public var cachedPrim : h3d.prim.Polygon;
 	var prevScale = [1.0, 1.0];
@@ -28,7 +30,9 @@ class Polygon extends Object3D {
 	override function save() {
 		var obj : Dynamic = super.save();
 		switch(shape){
-			case Quad:
+			case Quad(subdivision):
+				obj.kind = shape.getIndex();
+				obj.args = shape.getParameters();
 			case Disc(segments, angle, inner, rings):
 				obj.kind = shape.getIndex();
 				obj.args = shape.getParameters();
@@ -36,27 +40,22 @@ class Polygon extends Object3D {
 				obj.kind = 2;
 				obj.points = [for( p in points ) { x : p.x, y : p.y }];
 		}
-		#if editor
-		obj.debugColor = debugColor;
-		#end
+		if( color != -1 )
+			obj.color = color;
 		return obj;
 	}
 
 	override function load( obj : Dynamic ) {
 		super.load(obj);
 		switch(obj.kind){
-			case 0: shape = Quad;
-			case 1: shape = Type.createEnumIndex(Shape, obj.kind, obj.args);
+			case 0, 1: shape = Type.createEnumIndex(Shape, obj.kind, obj.args == null ? [0] : obj.args);
 			case 2:
 				shape = Custom;
 				var list : Array<Dynamic> = obj.points;
 				points = [for(pt in list) new h2d.col.Point(pt.x, pt.y)];
 		}
-		#if editor
-		debugColor = obj.debugColor != null ? obj.debugColor : 0xFFFFFF;
-		if((debugColor >> 24) == 0)
-			debugColor = 0x80000000 | debugColor;
-		#end
+		color = obj.color != null ? obj.color : -1;
+
 	}
 
 	override function updateInstance( ctx : Context, ?propName : String) {
@@ -64,9 +63,11 @@ class Polygon extends Object3D {
 		var mesh : h3d.scene.Mesh = cast ctx.local3d;
 		mesh.primitive = makePrimitive();
 		#if editor
-		setColor(ctx, debugColor);
+		setColor(ctx, color);
 		if(editor != null)
 			editor.update(propName);
+		#else
+		mesh.material.color.setColor(color);
 		#end
 	}
 
@@ -106,20 +107,77 @@ class Polygon extends Object3D {
 		return col.rayIntersection(ray, true);
 	}
 
+	public function getPolygonBounds() : h2d.col.Polygon {
+		return switch( shape ) {
+		case Quad(subdivision):
+			[
+				new Point(-0.5, -0.5),
+				new Point(0.5, -0.5),
+				new Point(0.5,  0.5),
+				new Point(-0.5,  0.5)
+			];
+		case Disc(segments, angle, _):
+			if(angle >= 360)
+				angle = 360;
+			++segments;
+			var anglerad = hxd.Math.degToRad(angle);
+			[for(i in 0...segments) {
+				var t = i / (segments - 1);
+				var a = hxd.Math.lerp(-anglerad/2, anglerad/2, t);
+				var ct = hxd.Math.cos(a);
+				var st = hxd.Math.sin(a);
+				new Point(ct, st);
+			}];
+		case Custom:
+			[for( p in points ) p.clone()];
+		};
+	}
+
 	public static function createPrimitive( shape : Shape ) {
 		var uvs : Array<Point> = null;
 		var points : Array<Point> = null;
 		var indices : Array<Int> = null;
 
 		switch(shape) {
-			case Quad:
-				points = [
-					new Point(-0.5, -0.5),
-					new Point(0.5, -0.5),
-					new Point(0.5,  0.5),
-					new Point(-0.5,  0.5)];
-				uvs = [for(v in points) new Point(v.y + 0.5, -v.x + 0.5)];  // Setup UVs so that image up (Y) is aligned with forward axis (X)
-				indices = [0,1,2,0,2,3];
+			case Quad(subdivision):
+
+				var size = subdivision + 1;
+				var cellCount = size;
+				cellCount *= cellCount;
+
+				points = [];
+				for( y in 0 ... size + 1 ) {
+					for( x in 0 ... size + 1 ) {
+						points.push(new Point(Math.lerp(-0.5, 0.5, x / size), Math.lerp(-0.5, 0.5, y / size)));
+					}
+				}
+
+				indices = [];
+				for( y in 0 ... size ) {
+					for( x in 0 ... size ) {
+						var i = x + y * (size + 1);
+						if( i % 2 == 0 ) {
+							indices.push(i);
+							indices.push(i + 1);
+							indices.push(i + size + 2);
+							indices.push(i);
+							indices.push(i + size + 2);
+							indices.push(i + size + 1);
+						}
+						else {
+							indices.push(i + size + 1);
+							indices.push(i);
+							indices.push(i + 1);
+							indices.push(i + 1);
+							indices.push(i + size + 2);
+							indices.push(i + size + 1);
+						}
+					}
+				}
+
+				// Setup UVs so that image up (Y) is aligned with forward axis (X)
+				uvs = [for(v in points) new Point(v.y + 0.5, -v.x + 0.5)];
+
 			case Disc(segments, angle, inner, rings):
 				points = [];
 				uvs = [];
@@ -180,8 +238,8 @@ class Polygon extends Object3D {
 		return ctx;
 	}
 
+	#if editor
 	public function setColor(ctx: Context, color: Int) {
-		#if editor
 		if(hrt.prefab.Material.hasOverride(this))
 			return;
 		if(ctx.local3d == null)
@@ -189,8 +247,8 @@ class Polygon extends Object3D {
 		var mesh = Std.downcast(ctx.local3d, h3d.scene.Mesh);
 		if(mesh != null)
 			hrt.prefab.Box.setDebugColor(color, mesh.material);
-		#end
 	}
+	#end
 
 	public function generateCustomPolygon(){
 		var polyPrim : h3d.prim.Polygon = null;
@@ -246,6 +304,7 @@ class Polygon extends Object3D {
 		var prevKind : Shape = this.shape;
 		var viewModel = {
 			kind: shape.getName(),
+			subdivision: 0,
 			segments: 24,
 			rings: 4,
 			innerRadius: 0.0,
@@ -253,7 +312,8 @@ class Polygon extends Object3D {
 		};
 
 		switch(shape) {
-			case Quad:
+			case Quad(subdivision):
+				viewModel.subdivision = subdivision;
 			case Disc(seg, angle, inner, rings):
 				viewModel.segments = seg;
 				viewModel.angle = angle;
@@ -276,12 +336,16 @@ class Polygon extends Object3D {
 		</div>
 		');
 
+		var quadProps = new hide.Element('
+			<dt>Subdivision</dt><dd><input field="subdivision" type="range" min="0" max="100" step="1" /></dd>');
+
 		var discProps = new hide.Element('
 			<dt>Segments</dt><dd><input field="segments" type="range" min="0" max="100" step="1" /></dd>
 			<dt>Rings</dt><dd><input field="rings" type="range" min="0" max="100" step="1" /></dd>
 			<dt>Inner radius</dt><dd><input field="innerRadius" type="range" min="0" max="1" /></dd>
 			<dt>Angle</dt><dd><input field="angle" type="range" min="0" max="360" /></dd>');
 
+		group.append(quadProps);
 		group.append(discProps);
 
 		var updateProps = null;
@@ -309,7 +373,7 @@ class Polygon extends Object3D {
 
 			switch( viewModel.kind ) {
 				case "Quad":
-					shape = Quad;
+					shape = Quad(viewModel.subdivision);
 					if(pIsKind && prevKind == Custom) {
 						scaleX = prevScale[0];
 						scaleY = prevScale[1];
@@ -323,7 +387,7 @@ class Polygon extends Object3D {
 				case "Custom":
 					shape = Custom;
 					if(pIsKind) {
-						if(prevKind == Quad) {
+						if(prevKind.match(Quad(_))) {
 							prevScale = [scaleX, scaleY];
 							function apply() {
 								points = [
@@ -350,7 +414,7 @@ class Polygon extends Object3D {
 						else
 							points = [];
 					}
-				default: shape = Quad;
+				default: shape = Quad(0);
 			}
 
 			updateProps();
@@ -361,10 +425,11 @@ class Polygon extends Object3D {
 		var editorProps = editor.addProps(ctx);
 
 		updateProps = function() {
+			quadProps.hide();
 			discProps.hide();
 			editorProps.hide();
 			switch(viewModel.kind){
-				case "Quad":
+				case "Quad": quadProps.show();
 				case "Disc": discProps.show();
 				case "Custom":
 					editorProps.show();
@@ -375,7 +440,7 @@ class Polygon extends Object3D {
 
 		ctx.properties.add( new hide.Element('
 			<div class="group" name="Params">
-				<dl><dt>Color</dt><dd><input type="color" alpha="true" field="debugColor"/></dd> </dl>
+				<dl><dt>Color</dt><dd><input type="color" alpha="true" field="color"/></dd> </dl>
 			</div>'), this, function(pname) { ctx.onChange(this, pname); });
 
 		updateProps();
